@@ -228,8 +228,8 @@ namespace Thry.ThryEditor
             if (!a && !ra) return;
 
             float pureTextWidth = Styles.flatHeader.CalcSize(drawnContent).x - Styles.flatHeader.padding.horizontal;
-            float x = rect.x + leftOffset + pureTextWidth + 4f;
-            const float dotW = 12f;
+            float x = rect.x + leftOffset + pureTextWidth + 3f;
+            const float dotW = 9f;
 
             if (a)
             {

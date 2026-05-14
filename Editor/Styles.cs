@@ -116,7 +116,7 @@ namespace Thry.ThryEditor
 				{
 					_headerAnimatedDotStyle = new GUIStyle()
 					{
-						fontSize = 12,
+						fontSize = 9,
 						normal = new GUIStyleState() { textColor = AnimatedColor },
 						alignment = TextAnchor.MiddleLeft
 					};
@@ -134,7 +134,7 @@ namespace Thry.ThryEditor
 				{
 					_headerAnimatedRenamedDotStyle = new GUIStyle()
 					{
-						fontSize = 12,
+						fontSize = 9,
 						normal = new GUIStyleState() { textColor = AnimatedRenamedColor },
 						alignment = TextAnchor.MiddleLeft
 					};
