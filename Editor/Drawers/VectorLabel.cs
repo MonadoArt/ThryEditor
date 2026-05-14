@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEngine;
 using System.Collections.Generic;
+using Thry.ThryEditor;
 
 namespace Thry.ThryEditor.Drawers
 {
@@ -22,9 +23,9 @@ namespace Thry.ThryEditor.Drawers
 		static void EnsureIconsLoaded()
 		{
 			if (s_IconsLoaded) return;
-			s_IconOff = AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GUIDToAssetPath(Thry.ThryEditor.RESOURCE_GUID.ICON_LINK_OFF));
-			s_IconRatio = AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GUIDToAssetPath(Thry.ThryEditor.RESOURCE_GUID.ICON_LINK_RATIO));
-			s_IconDelta = AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GUIDToAssetPath(Thry.ThryEditor.RESOURCE_GUID.ICON_LINK_DELTA));
+			s_IconOff = AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GUIDToAssetPath(RESOURCE_GUID.ICON_LINK_OFF));
+			s_IconRatio = AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GUIDToAssetPath(RESOURCE_GUID.ICON_LINK_RATIO));
+			s_IconDelta = AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GUIDToAssetPath(RESOURCE_GUID.ICON_LINK_DELTA));
 			s_IconsLoaded = true;
 		}
 
@@ -99,16 +100,17 @@ namespace Thry.ThryEditor.Drawers
 					case LinkMode.Ratio:
 						icon = s_IconRatio;
 						tooltip = "Mode: Ratio (like Transform Scale)\nChanging one scales all values by the same factor.\nClick to switch: Off → Ratio → Delta";
-						GUI.color = new Color(102f/255f, 217f/255f, 239f/255f);
+						GUI.color = EditorGUIUtility.isProSkin ? new Color(102f/255f, 217f/255f, 239f/255f) : new Color(78f/255f, 160f/255f, 245f/255f);
 						break;
 					case LinkMode.Delta:
 						icon = s_IconDelta;
 						tooltip = "Mode: Delta\nChanging one adds the same amount to all values.\nExample: +0.10 adds +0.10 to X/Y/Z/W.\nClick to switch: Off → Ratio → Delta";
-						GUI.color = new Color(166f/255f, 226f/255f, 46f/255f);
+						GUI.color = EditorGUIUtility.isProSkin ? new Color(166f/255f, 226f/255f, 46f/255f) : new Color(76f/255f, 198f/255f, 6f/255f);
 						break;
 					default:
 						icon = s_IconOff;
 						tooltip = "Mode: Off\nOnly the value you edit will change.\nClick to switch: Off → Ratio → Delta";
+						GUI.color = EditorGUIUtility.isProSkin ? GUI.color : new Color(0f/0f, 0f/0f, 0f/0f);
 						break;
 				}
 				if (GUI.Button(linkR, new GUIContent(icon, tooltip), GUIStyle.none))
