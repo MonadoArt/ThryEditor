@@ -727,7 +727,23 @@ namespace Thry.ThryEditor
             DrawingData.IconsPositioningCount = 0;
 
             UpdatedMaterialPropertyReference();
-            DrawInternal(content, rect, useEditorIndent, isInHeader);
+
+            // Every PerformDraw owns its label-color state for the duration of DrawInternal:
+            //   * animated → apply green/amber tint
+            //   * not animated → reset to the captured baseline so a tinted parent (e.g. an
+            //     animated ShaderTextureProperty wrapping reference sub-properties) doesn't bleed
+            //     its color into us. On exit we always restore exactly what was set on entry, so
+            //     the parent's tint resumes for its remaining inline draws (Tiling/Offset, etc.).
+            AnimatedLabelTint tint = AnimatedLabelTint.Begin(IsAnimatable && IsAnimated, IsRenaming);
+            try
+            {
+                DrawInternal(content, rect, useEditorIndent, isInHeader);
+            }
+            finally
+            {
+                tint.End();
+            }
+
             CalculateIconPositions();
             HandleRightClickToggles(isInHeader);
 
@@ -739,6 +755,94 @@ namespace Thry.ThryEditor
             ExecuteClickEvents();
         }
 
+        private struct AnimatedLabelTint
+        {
+            StyleColors _label, _foldout;
+
+            struct StyleColors
+            {
+                public Color normal, onNormal, hover, onHover, focused, onFocused, active, onActive;
+
+                public static StyleColors Capture(GUIStyle s) => new StyleColors
+                {
+                    normal = s.normal.textColor,
+                    onNormal = s.onNormal.textColor,
+                    hover = s.hover.textColor,
+                    onHover = s.onHover.textColor,
+                    focused = s.focused.textColor,
+                    onFocused = s.onFocused.textColor,
+                    active = s.active.textColor,
+                    onActive = s.onActive.textColor,
+                };
+
+                public void Restore(GUIStyle s)
+                {
+                    s.normal.textColor = normal;
+                    s.onNormal.textColor = onNormal;
+                    s.hover.textColor = hover;
+                    s.onHover.textColor = onHover;
+                    s.focused.textColor = focused;
+                    s.onFocused.textColor = onFocused;
+                    s.active.textColor = active;
+                    s.onActive.textColor = onActive;
+                }
+
+                public static void Apply(GUIStyle s, Color c)
+                {
+                    s.normal.textColor = c;
+                    s.onNormal.textColor = c;
+                    s.hover.textColor = c;
+                    s.onHover.textColor = c;
+                    s.focused.textColor = c;
+                    s.onFocused.textColor = c;
+                    s.active.textColor = c;
+                    s.onActive.textColor = c;
+                }
+            }
+
+            // Baseline (un-tinted) state captured once when no tint is active. Used to reset
+            // EditorStyles for nested non-animated draws so a tinted parent property doesn't
+            // bleed its color into independent sub-properties (texture reference props, etc.).
+            static StyleColors s_baselineLabel;
+            static StyleColors s_baselineFoldout;
+            static int s_depth;
+
+            public static AnimatedLabelTint Begin(bool isAnimated, bool isRenaming)
+            {
+                if (s_depth == 0)
+                {
+                    s_baselineLabel = StyleColors.Capture(EditorStyles.label);
+                    s_baselineFoldout = StyleColors.Capture(EditorStyles.foldout);
+                }
+                s_depth++;
+
+                var t = new AnimatedLabelTint
+                {
+                    _label = StyleColors.Capture(EditorStyles.label),
+                    _foldout = StyleColors.Capture(EditorStyles.foldout),
+                };
+                if (isAnimated)
+                {
+                    Color color = (isRenaming ? Styles.animatedRenamedIndicatorStyle : Styles.animatedIndicatorStyle).normal.textColor;
+                    StyleColors.Apply(EditorStyles.label, color);
+                    StyleColors.Apply(EditorStyles.foldout, color);
+                }
+                else
+                {
+                    s_baselineLabel.Restore(EditorStyles.label);
+                    s_baselineFoldout.Restore(EditorStyles.foldout);
+                }
+                return t;
+            }
+
+            public void End()
+            {
+                _label.Restore(EditorStyles.label);
+                _foldout.Restore(EditorStyles.foldout);
+                s_depth--;
+            }
+        }
+
         private void CalculateIconPositions()
         {
             if (this is ShaderTextureProperty == false)
@@ -747,11 +851,19 @@ namespace Thry.ThryEditor
                 if (DrawingData.IconsPositioningCount == 0)
                 {
                     DrawingData.IconsPositioningCount = 1;
-                    DrawingData.IconsPositioningHeights[0] = DrawingData.LastGuiObjectRect.y + (DrawingData.LastGuiObjectRect.height - 16) / 2f;
+                    // Anchor to the top single-line of where the property's label actually sits.
+                    // When Unity (not Thry) renders stacked decorators inside the rect, the label
+                    // is pushed down by the decorator height — GetLabelYOffsetWithinRect reports
+                    // that offset so the A/RA icon stays aligned with the label text.
+                    float labelYOffset = GetLabelYOffsetWithinRect();
+                    float labelLineHeight = Mathf.Min(DrawingData.LastGuiObjectRect.height - labelYOffset, EditorGUIUtility.singleLineHeight);
+                    DrawingData.IconsPositioningHeights[0] = DrawingData.LastGuiObjectRect.y + labelYOffset + (labelLineHeight - 16) / 2f;
                 }
             }
             DrawingData.TooltipCheckRect.width = EditorGUIUtility.labelWidth;
         }
+
+        protected virtual float GetLabelYOffsetWithinRect() => 0f;
 
         private void ExecuteClickEvents()
         {
@@ -766,11 +878,12 @@ namespace Thry.ThryEditor
         
         private void DrawLockedAnimated()
         {
+            GUIStyle style = IsRenaming ? Styles.animatedRenamedIndicatorStyle : Styles.animatedIndicatorStyle;
+            string text = IsRenaming ? "RA" : "A";
             for (int i = 0; i < DrawingData.IconsPositioningCount; i++)
             {
                 Rect r = new Rect(14, DrawingData.IconsPositioningHeights[i], 16, 16);
-                if (IsRenaming) GUI.Label(r, "RA", Styles.animatedIndicatorStyle);
-                else GUI.Label(r, "A", Styles.animatedIndicatorStyle);
+                GUI.Label(r, text, style);
             }
         }
 

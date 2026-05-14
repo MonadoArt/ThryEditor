@@ -70,6 +70,9 @@ namespace Thry.ThryEditor
 			}
 		}
 
+		private static Color AnimatedColor => EditorGUIUtility.isProSkin ? new Color(0.3f, 1f, 0.3f) : new Color(0f, 0.5f, 0f);
+		private static Color AnimatedRenamedColor => EditorGUIUtility.isProSkin ? new Color(1f, 0.85f, 0.2f) : new Color(0.55f, 0.4f, 0f);
+
 		private static GUIStyle _animatedIndicatorStyle;
 		public static GUIStyle animatedIndicatorStyle
 		{
@@ -79,11 +82,28 @@ namespace Thry.ThryEditor
 				{
 					_animatedIndicatorStyle = new GUIStyle()
 					{
-						normal = new GUIStyleState() { textColor = EditorGUIUtility.isProSkin ? new Color(0.3f, 1f, 0.3f) : new Color(0f, 0.5f, 0f) },
+						normal = new GUIStyleState() { textColor = AnimatedColor },
 						alignment = TextAnchor.MiddleRight
 					};
 				}
 				return _animatedIndicatorStyle;
+			}
+		}
+
+		private static GUIStyle _animatedRenamedIndicatorStyle;
+		public static GUIStyle animatedRenamedIndicatorStyle
+		{
+			get
+			{
+				if (_animatedRenamedIndicatorStyle == null)
+				{
+					_animatedRenamedIndicatorStyle = new GUIStyle()
+					{
+						normal = new GUIStyleState() { textColor = AnimatedRenamedColor },
+						alignment = TextAnchor.MiddleRight
+					};
+				}
+				return _animatedRenamedIndicatorStyle;
 			}
 		}
 

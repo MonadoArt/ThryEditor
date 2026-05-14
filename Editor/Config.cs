@@ -1,5 +1,5 @@
-﻿// Material/Shader Inspector for Unity 2017/2018
-// Copyright (C) 2019 Thryrallo
+﻿// Material/Shader Inspector for Unity 2021/2022/6
+// Copyright (C) 2019-2026 Thryrallo
 
 using System.IO;
 using Thry.ThryEditor.Helpers;
@@ -11,7 +11,7 @@ namespace Thry.ThryEditor
     public class Config
     {
         private const string PATH_CONFIG_FILE = "Thry/Config.json";
-        private static readonly Version INSTALLED_VERSION = "2.70.4-poi";
+        private static readonly Version INSTALLED_VERSION = "2.71.0-poi";
 
         private static Config s_config;
 
