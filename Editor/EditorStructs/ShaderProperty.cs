@@ -292,8 +292,11 @@ namespace Thry.ThryEditor
                 }
             }
 
+            bool wasAnimated = this.IsAnimated;
+            bool wasRenaming = this.IsRenaming;
             this.IsAnimated = IsAnimatable && tag != "";
             this.IsRenaming = IsAnimatable && tag == "2";
+            if (wasAnimated != this.IsAnimated || wasRenaming != this.IsRenaming) (Parent as ShaderGroup)?.SetAnimatedDescendantStateDirty();
         }
 
         protected override void GUILocaleEditing(bool isInHeader)

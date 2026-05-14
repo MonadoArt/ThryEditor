@@ -98,7 +98,8 @@ namespace Thry.ThryEditor
                 }
                 else
                 {
-                    GUI.Box(rect, new GUIContent("     " + content.text, content.tooltip), Styles.flatHeader);
+                    GUIContent boxContent = new GUIContent("     " + content.text, content.tooltip);
+                    GUI.Box(rect, boxContent, Styles.flatHeader);
                     if (Config.Instance.showNotes && !string.IsNullOrWhiteSpace(Note))
                     {
                         Rect noteRect = new Rect(rect);
@@ -106,8 +107,9 @@ namespace Thry.ThryEditor
                         noteRect.width = Mathf.Max(0f, noteRect.width - reserved);
                         GUI.Label(noteRect, Note, Styles.label_property_note);
                     }
+                    DrawAnimatedDots(rect, boxContent, Styles.flatHeader.padding.left);
                 }
-                
+
                 DrawIcons(rect, options, e);
 
                 Rect togglePropertyRect = new Rect(rect);
@@ -159,7 +161,8 @@ namespace Thry.ThryEditor
                 {
                     int savedPadding = Styles.flatHeader.padding.left;
                     Styles.flatHeader.padding.left = textOffset;
-                    GUI.Box(rect, new GUIContent(content.text, content.tooltip), Styles.flatHeader);
+                    GUIContent boxContent = new GUIContent(content.text, content.tooltip);
+                    GUI.Box(rect, boxContent, Styles.flatHeader);
                     Styles.flatHeader.padding.left = savedPadding;
                     if (Config.Instance.showNotes && !string.IsNullOrWhiteSpace(Note))
                     {
@@ -168,6 +171,7 @@ namespace Thry.ThryEditor
                         noteRect.width = Mathf.Max(0f, noteRect.width - reserved);
                         GUI.Label(noteRect, Note, Styles.label_property_note);
                     }
+                    DrawAnimatedDots(rect, boxContent, textOffset);
                 }
 
                 DrawIcons(rect, options, e);
@@ -208,9 +212,34 @@ namespace Thry.ThryEditor
                     noteRect.width = Mathf.Max(0f, noteRect.width - reserved);
                     GUI.Label(noteRect, Note, Styles.label_property_note);
                 }
+                DrawAnimatedDots(rect, content, Styles.flatHeader.padding.left);
                 DrawIcons(rect, options, e);
             }
 
+        }
+
+        private void DrawAnimatedDots(Rect rect, GUIContent drawnContent, float leftOffset)
+        {
+            if (!Config.Instance.showAnimatedDotOnHeaders) return;
+            if (Event.current.type != EventType.Repaint) return;
+
+            bool a = HasAnimatedDescendant;
+            bool ra = HasRenameAnimatedDescendant;
+            if (!a && !ra) return;
+
+            float pureTextWidth = Styles.flatHeader.CalcSize(drawnContent).x - Styles.flatHeader.padding.horizontal;
+            float x = rect.x + leftOffset + pureTextWidth + 4f;
+            const float dotW = 12f;
+
+            if (a)
+            {
+                GUI.Label(new Rect(x, rect.y, dotW, rect.height), "●", Styles.headerAnimatedDotStyle);
+                x += dotW;
+            }
+            if (ra)
+            {
+                GUI.Label(new Rect(x, rect.y, dotW, rect.height), "●", Styles.headerAnimatedRenamedDotStyle);
+            }
         }
 
         /// <summary>

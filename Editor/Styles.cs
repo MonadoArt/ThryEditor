@@ -70,8 +70,8 @@ namespace Thry.ThryEditor
 			}
 		}
 
-		private static Color AnimatedColor => EditorGUIUtility.isProSkin ? new Color(0.3f, 1f, 0.3f) : new Color(0f, 0.5f, 0f);
-		private static Color AnimatedRenamedColor => EditorGUIUtility.isProSkin ? new Color(1f, 0.85f, 0.2f) : new Color(0.55f, 0.4f, 0f);
+		public static Color AnimatedColor => EditorGUIUtility.isProSkin ? new Color(0.3f, 1f, 0.3f) : new Color(0f, 0.5f, 0f);
+		public static Color AnimatedRenamedColor => EditorGUIUtility.isProSkin ? new Color(1f, 0.85f, 0.2f) : new Color(0.55f, 0.4f, 0f);
 
 		private static GUIStyle _animatedIndicatorStyle;
 		public static GUIStyle animatedIndicatorStyle
@@ -104,6 +104,42 @@ namespace Thry.ThryEditor
 					};
 				}
 				return _animatedRenamedIndicatorStyle;
+			}
+		}
+
+		private static GUIStyle _headerAnimatedDotStyle;
+		public static GUIStyle headerAnimatedDotStyle
+		{
+			get
+			{
+				if (_headerAnimatedDotStyle == null)
+				{
+					_headerAnimatedDotStyle = new GUIStyle()
+					{
+						fontSize = 12,
+						normal = new GUIStyleState() { textColor = AnimatedColor },
+						alignment = TextAnchor.MiddleLeft
+					};
+				}
+				return _headerAnimatedDotStyle;
+			}
+		}
+
+		private static GUIStyle _headerAnimatedRenamedDotStyle;
+		public static GUIStyle headerAnimatedRenamedDotStyle
+		{
+			get
+			{
+				if (_headerAnimatedRenamedDotStyle == null)
+				{
+					_headerAnimatedRenamedDotStyle = new GUIStyle()
+					{
+						fontSize = 12,
+						normal = new GUIStyleState() { textColor = AnimatedRenamedColor },
+						alignment = TextAnchor.MiddleLeft
+					};
+				}
+				return _headerAnimatedRenamedDotStyle;
 			}
 		}
 

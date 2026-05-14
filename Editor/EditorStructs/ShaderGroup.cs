@@ -23,6 +23,44 @@ namespace Thry.ThryEditor
             }
         }
 
+        protected bool? _hasAnimatedDescendant;
+        protected bool? _hasRenameAnimatedDescendant;
+
+        public virtual bool HasAnimatedDescendant
+        {
+            get
+            {
+                if (_hasAnimatedDescendant == null)
+                {
+                    _hasAnimatedDescendant = Children.Any(p =>
+                        (p is ShaderGroup g && g.HasAnimatedDescendant) ||
+                        (p.IsAnimated && !p.IsRenaming));
+                }
+                return _hasAnimatedDescendant.Value;
+            }
+        }
+
+        public virtual bool HasRenameAnimatedDescendant
+        {
+            get
+            {
+                if (_hasRenameAnimatedDescendant == null)
+                {
+                    _hasRenameAnimatedDescendant = Children.Any(p =>
+                        (p is ShaderGroup g && g.HasRenameAnimatedDescendant) ||
+                        (p.IsAnimated && p.IsRenaming));
+                }
+                return _hasRenameAnimatedDescendant.Value;
+            }
+        }
+
+        internal void SetAnimatedDescendantStateDirty()
+        {
+            _hasAnimatedDescendant = null;
+            _hasRenameAnimatedDescendant = null;
+            (Parent as ShaderGroup)?.SetAnimatedDescendantStateDirty();
+        }
+
         private List<ShaderPart> _children = new List<ShaderPart>();
         private ReadOnlyCollection<ShaderPart> _readonlychildren => new ReadOnlyCollection<ShaderPart>(_children);
         [PublicAPI]

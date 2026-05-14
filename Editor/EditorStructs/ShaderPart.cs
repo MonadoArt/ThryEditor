@@ -1284,6 +1284,7 @@ namespace Thry.ThryEditor
             IsAnimated = animated;
             IsRenaming = renamed;
             ShaderOptimizer.SetAnimatedTag(MaterialProperty, IsAnimated ? (IsRenaming ? "2" : "1") : "");
+            (Parent as ShaderGroup)?.SetAnimatedDescendantStateDirty();
         }
 #endregion
 #region Actions / Callbacks

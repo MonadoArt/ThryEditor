@@ -163,6 +163,7 @@ namespace Thry.ThryEditor
             Toggle(nameof(Config.showRenderQueue));
             Toggle(nameof(Config.showColorspaceWarnings));
             Toggle(nameof(Config.showStarNextToNonDefaultProperties));
+            Toggle(nameof(Config.showAnimatedDotOnHeaders));
 
             EditorGUILayout.Space();
             GUILayout.Label(EditorLocale.editor.Get("shader_ui_features_header"), EditorStyles.boldLabel);
