@@ -489,8 +489,7 @@ namespace Thry.ThryEditor
             });
             menu.AddItem(new GUIContent("Paste Special..."), false, () =>
             {
-                if(Mediator.copy_material == null || Mediator.copy_part == null)
-                    return;
+                if(Mediator.copy_material == null || Mediator.copy_part == null) return;
                 
                 ThryLogger.LogDetail("ShaderHeader", $"Pasting** '{property.Content.text}' of {ShaderEditor.Active.Materials[0].name}");
                 var popup = ScriptableObject.CreateInstance<PasteSpecialPopup>();
@@ -513,6 +512,46 @@ namespace Thry.ThryEditor
                     }
                 };
                 
+            });
+            menu.AddSeparator("");
+            menu.AddItem(new GUIContent("Copy as Text"), false, () =>
+            {
+                string json = MaterialTextSerializer.Serialize(property, materials[0]);
+                if (string.IsNullOrEmpty(json))
+                {
+                    Debug.LogError("Failed to serialize section to text");
+                    return;
+                }
+                EditorGUIUtility.systemCopyBuffer = json;
+                ThryLogger.LogDetail("ShaderHeader", $"Copied section '{property.Content.text}' of {materials[0].name} as text ({json.Length} chars)");
+            });
+            menu.AddItem(new GUIContent("Paste from Text"), false, () =>
+            {
+                string clip = EditorGUIUtility.systemCopyBuffer;
+                if (!MaterialTextSerializer.TryDeserialize(clip, out var data))
+                {
+                    Debug.LogError("Paste from Text: clipboard does not contain a valid Thry material text payload.");
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(data.shader) && data.shader != materials[0].shader.name) ThryLogger.LogWarn("ShaderHeader", $"Pasting from shader '{data.shader}' onto '{materials[0].shader.name}'. Properties that don't exist on the target shader will be skipped.");
+
+                int undoGroup = Undo.GetCurrentGroup();
+                Undo.RecordObjects(materials, $"Paste from Text {property.Content.text}");
+
+                var scratch = new Material(materials[0].shader);
+                int applied = MaterialTextSerializer.ApplyToMaterial(data, scratch);
+
+                property.CopyFrom(scratch, skipPropertyTypes: MaterialTextSerializer.SkipTextures);
+                property.UpdateLinkedMaterials();
+                GlobalLinker.OnSectionChanged(property);
+
+                Object.DestroyImmediate(scratch);
+
+                Undo.SetCurrentGroupName($"Paste from Text {property.Content.text} of {materials[0].name} ({applied} properties)");
+                Undo.CollapseUndoOperations(undoGroup);
+
+                ThryLogger.LogDetail("ShaderHeader", $"Pasted {applied} properties from text onto '{property.Content.text}'");
             });
             menu.AddSeparator("");
             if(Config.Instance.showNotes)
