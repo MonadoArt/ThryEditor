@@ -354,8 +354,8 @@ namespace Thry.ThryEditor
     {
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
-            if (deletedAssets.Length > 0)
-                AssetsDeleted(deletedAssets);
+            if (deletedAssets.Length > 0) AssetsDeleted(deletedAssets);
+            if (importedAssets.Length > 0) RepairLockedShaderRefs(importedAssets);
         }
 
         private static void AssetsDeleted(string[] assets)
@@ -376,6 +376,43 @@ namespace Thry.ThryEditor
                     return true;
             }
             return false;
+        }
+
+        // When a locked material is duplicated (Ctrl+D) the copy inherits the original's shader reference and
+        // its AllLockedGUIDS override tag, but the original's tag isn't updated to know about the copy. Unlocking
+        // the original would then trash the shared .shader file and leave the copy pink. Patch the tag here so
+        // the unlock refcount in ShaderOptimizer.UnlockConcrete stays accurate.
+        private static void RepairLockedShaderRefs(string[] importedAssets)
+        {
+            foreach (string path in importedAssets)
+            {
+                if (string.IsNullOrEmpty(path) || !path.EndsWith(".mat", StringComparison.OrdinalIgnoreCase)) continue;
+
+                Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (mat == null || !mat.IsLocked()) continue;
+
+                string tag = mat.GetTag(ShaderOptimizer.TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, false, string.Empty);
+                if (string.IsNullOrEmpty(tag)) continue;
+
+                string myGuid = AssetDatabase.AssetPathToGUID(path);
+                if (string.IsNullOrEmpty(myGuid)) continue;
+
+                List<string> guids = tag.Split(',').Where(g => !string.IsNullOrWhiteSpace(g)).ToList();
+                if (guids.Contains(myGuid)) continue;
+
+                Shader sharedShader = mat.shader;
+                guids.Add(myGuid);
+                string newTag = string.Join(",", guids);
+
+                mat.SetOverrideTag(ShaderOptimizer.TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, newTag);
+
+                foreach (string g in guids)
+                {
+                    if (g == myGuid) continue;
+                    Material peer = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(g));
+                    if (peer != null && peer.shader == sharedShader) peer.SetOverrideTag(ShaderOptimizer.TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, newTag);
+                }
+            }
         }
     }
 }
