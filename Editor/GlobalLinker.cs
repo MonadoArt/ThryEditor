@@ -150,6 +150,12 @@ namespace Thry.ThryEditor
 
         public static GlobalLink CreateLink(string name, string sectionPropertyName, ShaderGroup section)
         {
+            Material[] selected = section.MaterialProperty.targets.Cast<Material>().ToArray();
+            return CreateLink(name, sectionPropertyName, section, selected);
+        }
+
+        public static GlobalLink CreateLink(string name, string sectionPropertyName, ShaderGroup section, IEnumerable<Material> materials)
+        {
             Load();
 
             GlobalLink link = new GlobalLink();
@@ -157,9 +163,14 @@ namespace Thry.ThryEditor
             link.sectionPropertyName = sectionPropertyName;
             CapturePropertiesFromSection(link, section);
 
-            Material self = (Material)section.MaterialProperty.targets[0];
-            string guid = UnityHelper.GetGUID(self);
-            if (!link.subscribedMaterialGuids.Contains(guid)) link.subscribedMaterialGuids = link.subscribedMaterialGuids.Append(guid).ToArray();
+            List<string> guids = link.subscribedMaterialGuids.ToList();
+            foreach (Material m in materials)
+            {
+                if (m == null) continue;
+                string guid = UnityHelper.GetGUID(m);
+                if (!guids.Contains(guid)) guids.Add(guid);
+            }
+            link.subscribedMaterialGuids = guids.ToArray();
 
             s_data.Add(link);
             Save();
@@ -168,11 +179,33 @@ namespace Thry.ThryEditor
 
         public static void Subscribe(GlobalLink link, Material material, bool applyLinkToMaterial)
         {
-            Load();
-            string guid = UnityHelper.GetGUID(material);
-            if (!link.subscribedMaterialGuids.Contains(guid)) link.subscribedMaterialGuids = link.subscribedMaterialGuids.Append(guid).ToArray();
+            Subscribe(link, new[] { material }, applyLinkToMaterial);
+        }
 
-            if (applyLinkToMaterial) ApplyLinkToMaterial(link, material, recordUndo: true);
+        public static void Subscribe(GlobalLink link, IEnumerable<Material> materials, bool applyLinkToMaterial)
+        {
+            Load();
+
+            List<string> guids = link.subscribedMaterialGuids.ToList();
+            foreach (Material material in materials)
+            {
+                if (material == null) continue;
+
+                // Force-switch: if this material is already in a different link for the same section, drop it from that link first.
+                GlobalLink existing = GetLinkForMaterial(material, link.sectionPropertyName);
+                if (existing != null && existing != link)
+                {
+                    string existingGuid = UnityHelper.GetGUID(material);
+                    existing.subscribedMaterialGuids = existing.subscribedMaterialGuids.Where(g => g != existingGuid).ToArray();
+                    if (existing.subscribedMaterialGuids.Length == 0) s_data.Remove(existing);
+                }
+
+                string guid = UnityHelper.GetGUID(material);
+                if (!guids.Contains(guid)) guids.Add(guid);
+
+                if (applyLinkToMaterial) ApplyLinkToMaterial(link, material, recordUndo: true);
+            }
+            link.subscribedMaterialGuids = guids.ToArray();
 
             Save();
             RequestRepaint();
@@ -180,15 +213,25 @@ namespace Thry.ThryEditor
 
         public static void Unsubscribe(Material material, string sectionPropertyName)
         {
+            Unsubscribe(new[] { material }, sectionPropertyName);
+        }
+
+        public static void Unsubscribe(IEnumerable<Material> materials, string sectionPropertyName)
+        {
             Load();
-            GlobalLink link = GetLinkForMaterial(material, sectionPropertyName);
-            if (link == null) return;
+            bool changed = false;
+            foreach (Material material in materials)
+            {
+                if (material == null) continue;
+                GlobalLink link = GetLinkForMaterial(material, sectionPropertyName);
+                if (link == null) continue;
 
-            string guid = UnityHelper.GetGUID(material);
-            link.subscribedMaterialGuids = link.subscribedMaterialGuids.Where(g => g != guid).ToArray();
-            if (link.subscribedMaterialGuids.Length == 0) s_data.Remove(link);
-
-            Save();
+                string guid = UnityHelper.GetGUID(material);
+                link.subscribedMaterialGuids = link.subscribedMaterialGuids.Where(g => g != guid).ToArray();
+                if (link.subscribedMaterialGuids.Length == 0) s_data.Remove(link);
+                changed = true;
+            }
+            if (changed) Save();
         }
 
         public static void DeleteLink(GlobalLink link)
@@ -480,17 +523,21 @@ namespace Thry.ThryEditor
         private class GlobalLinkerPopupWindow : EditorWindow
         {
             private ShaderGroup _section;
-            private Material _material;
+            private Material[] _materials;
             private string _sectionPropertyName;
             private string _newLinkName = "";
             private Vector2 _scrollPos;
             private List<GlobalLink> _availableLinks;
-            private GlobalLink _currentLink;
+            private GlobalLink _currentLink;       // non-null only when ALL selected materials share the same link
+            private bool _hasMixedState;           // true when selected materials are in inconsistent link states
+            private int _linkedCount;              // number of selected materials currently linked (for any link) for this section
+
+            private Material PrimaryMaterial => _materials != null && _materials.Length > 0 ? _materials[0] : null;
 
             public void Init(ShaderGroup section)
             {
                 _section = section;
-                _material = (Material)section.MaterialProperty.targets[0];
+                _materials = section.MaterialProperty.targets.Cast<Material>().Where(m => m != null).ToArray();
                 _sectionPropertyName = section.MaterialProperty.name;
                 titleContent = new GUIContent("Global Links");
                 RefreshState();
@@ -499,7 +546,26 @@ namespace Thry.ThryEditor
             private void RefreshState()
             {
                 _availableLinks = GetLinksForSection(_sectionPropertyName);
-                _currentLink = GetLinkForMaterial(_material, _sectionPropertyName);
+
+                _currentLink = null;
+                _hasMixedState = false;
+                _linkedCount = 0;
+
+                if (_materials == null || _materials.Length == 0) return;
+
+                GlobalLink firstLink = GetLinkForMaterial(_materials[0], _sectionPropertyName);
+                bool uniform = true;
+                if (firstLink != null) _linkedCount++;
+
+                for (int i = 1; i < _materials.Length; i++)
+                {
+                    GlobalLink l = GetLinkForMaterial(_materials[i], _sectionPropertyName);
+                    if (l != null) _linkedCount++;
+                    if (l != firstLink) uniform = false;
+                }
+
+                if (uniform) _currentLink = firstLink;
+                else _hasMixedState = true;
             }
 
             void OnGUI()
@@ -515,12 +581,23 @@ namespace Thry.ThryEditor
                 GUILayout.Space(4);
 
                 // Current Status
-                if (_currentLink != null)
+                if (_hasMixedState)
                 {
-                    EditorGUILayout.HelpBox($"Linked to: \"{_currentLink.name}\" ({_currentLink.subscribedMaterialGuids.Length} material(s))", MessageType.Info);
+                    EditorGUILayout.HelpBox($"Mixed — {_linkedCount} of {_materials.Length} selected materials are linked.", MessageType.Warning);
+                    if (GUILayout.Button("Disconnect All"))
+                    {
+                        Unsubscribe(_materials, _sectionPropertyName);
+                        RefreshState();
+                    }
+                    GUILayout.Space(4);
+                }
+                else if (_currentLink != null)
+                {
+                    string selectionSuffix = _materials.Length > 1 ? $" — {_materials.Length} selected" : "";
+                    EditorGUILayout.HelpBox($"Linked to: \"{_currentLink.name}\" ({_currentLink.subscribedMaterialGuids.Length} material(s)){selectionSuffix}", MessageType.Info);
                     if (GUILayout.Button("Disconnect"))
                     {
-                        Unsubscribe(_material, _sectionPropertyName);
+                        Unsubscribe(_materials, _sectionPropertyName);
                         RefreshState();
                     }
                     GUILayout.Space(4);
@@ -580,10 +657,10 @@ namespace Thry.ThryEditor
                     }
                     else
                     {
-                        // If currently linked to something else, disconnect first
-                        if (_currentLink != null) Unsubscribe(_material, _sectionPropertyName);
+                        // Drop any existing links on the selected materials first (force-switch)
+                        Unsubscribe(_materials, _sectionPropertyName);
 
-                        GlobalLink newLink = CreateLink(_newLinkName, _sectionPropertyName, _section);
+                        GlobalLink newLink = CreateLink(_newLinkName, _sectionPropertyName, _section, _materials);
                         _newLinkName = "";
                         RefreshState();
                     }
@@ -599,41 +676,60 @@ namespace Thry.ThryEditor
 
             private void SelectLink(GlobalLink link)
             {
-                // If already linked to something else, disconnect first
-                if (_currentLink != null) Unsubscribe(_material, _sectionPropertyName);
-
                 bool linkHasProperties = link.properties.Length > 0;
+                bool isMultiSelect = _materials != null && _materials.Length > 1;
 
                 if (linkHasProperties)
                 {
-                    // Link already has stored values - prompt
-                    int choice = EditorUtility.DisplayDialogComplex(
-                        "Sync Properties",
-                        $"This Global Link \"{link.name}\" already has stored properties.\n\n" +
-                        $"How would you like to sync it?",
-                        "Use Link's properties",                                        // 0 = Apply Link -> This Material
-                        "Cancel",                                                       // 1 = Cancel
-                        $"Override with \"{_material.name}\"'s current properties."     // 2 = Overwrite Link from this Material
-                    );
-                    if (choice == 0)
+                    if (isMultiSelect)
                     {
-                        Subscribe(link, _material, applyLinkToMaterial: true);
-                    }
-                    else if (choice == 2)
-                    {
-                        Subscribe(link, _material, applyLinkToMaterial: false);
-                        OverwriteLinkFromSection(link, _section);
+                        // Override is ambiguous across multiple materials - only offer Apply / Cancel.
+                        bool apply = EditorUtility.DisplayDialog(
+                            "Sync Properties",
+                            $"This Global Link \"{link.name}\" already has stored properties.\n\n" +
+                            $"Applying will overwrite the section properties of all {_materials.Length} selected materials with the link's stored values.",
+                            "Use Link's properties",
+                            "Cancel"
+                        );
+                        if (!apply)
+                        {
+                            RefreshState();
+                            return;
+                        }
+                        Subscribe(link, _materials, applyLinkToMaterial: true);
                     }
                     else
                     {
-                        RefreshState();
-                        return;
+                        Material single = PrimaryMaterial;
+                        // Link already has stored values - prompt
+                        int choice = EditorUtility.DisplayDialogComplex(
+                            "Sync Properties",
+                            $"This Global Link \"{link.name}\" already has stored properties.\n\n" +
+                            $"How would you like to sync it?",
+                            "Use Link's properties",                                    // 0 = Apply Link -> This Material
+                            "Cancel",                                                   // 1 = Cancel
+                            $"Override with \"{single.name}\"'s current properties."    // 2 = Overwrite Link from this Material
+                        );
+                        if (choice == 0)
+                        {
+                            Subscribe(link, single, applyLinkToMaterial: true);
+                        }
+                        else if (choice == 2)
+                        {
+                            Subscribe(link, single, applyLinkToMaterial: false);
+                            OverwriteLinkFromSection(link, _section);
+                        }
+                        else
+                        {
+                            RefreshState();
+                            return;
+                        }
                     }
                 }
                 else
                 {
                     // Link is empty (shouldn't normally happen since CreateLink captures, but guard anyway)
-                    Subscribe(link, _material, applyLinkToMaterial: false);
+                    Subscribe(link, _materials, applyLinkToMaterial: false);
                     OverwriteLinkFromSection(link, _section);
                 }
 

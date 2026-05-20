@@ -409,8 +409,16 @@ namespace Thry.ThryEditor
 
         private void DrawGlobalLinkSettings(Rect rect, Event e)
         {
-            Material self = (Material)ShaderEditor.Active.CurrentProperty.MaterialProperty.targets[0];
-            bool isGloballyLinked = GlobalLinker.IsGloballyLinked(self, this.MaterialProperty.name);
+            string propName = this.MaterialProperty.name;
+            bool isGloballyLinked = false;
+            foreach (UnityEngine.Object target in ShaderEditor.Active.CurrentProperty.MaterialProperty.targets)
+            {
+                if (target is Material m && GlobalLinker.IsGloballyLinked(m, propName))
+                {
+                    isGloballyLinked = true;
+                    break;
+                }
+            }
             GUIStyle icon = isGloballyLinked ? Icons.globallinked_active : Icons.globallinked;
             if (GUILib.Button(rect, icon))
             {
