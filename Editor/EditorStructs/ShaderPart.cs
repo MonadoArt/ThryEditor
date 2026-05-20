@@ -932,6 +932,7 @@ namespace Thry.ThryEditor
                     _contextMenu.AddItem(new GUIContent("Copy Animated Property Name"), false, () => { EditorGUIUtility.systemCopyBuffer = GetAnimatedPropertyName(); });
                     _contextMenu.AddItem(new GUIContent("Copy Animated Property Path"), false, CopyPropertyPath);
                     _contextMenu.AddItem(new GUIContent("Copy Property as Keyframe"), false, CopyPropertyAsKeyframe);
+                    if (IsAnimationWindowRecording()) _contextMenu.AddItem(new GUIContent("Add Keyframe to Animation"), false, AddKeyToAnimationClip);
 #if UNITY_2022_1_OR_NEWER
                     bool isLockedInChildren = false;
                     bool isLockedByAncestor = false;
@@ -1265,6 +1266,144 @@ namespace Thry.ThryEditor
                 keyframeList.Add(ClipToKeyFrame(animationCurveType, clip, path, ".w", rendererType));
             }
             clipboardField.SetValue(null, keyframeList);
+        }
+
+        void AddKeyToAnimationClip()
+        {
+            Transform selected = Selection.activeTransform;
+            Transform root = selected;
+            while (root != null && root.GetComponent<Animator>() == null) root = root.parent;
+            if (selected == null || root == null)
+            {
+                ThryLogger.LogWarn("Add Key: selected object has no Animator in its hierarchy.");
+                return;
+            }
+            string path = (selected != root) ? AnimationUtility.CalculateTransformPath(selected, root) : "";
+
+            Type rendererType = typeof(Renderer);
+            if (selected.GetComponent<SkinnedMeshRenderer>()) rendererType = typeof(SkinnedMeshRenderer);
+            else if (selected.GetComponent<MeshRenderer>()) rendererType = typeof(MeshRenderer);
+
+            object state = TryGetAnimationWindowState();
+            if (state == null)
+            {
+                ThryLogger.LogWarn("Add Key: Unable to access Animation Window state via reflection.");
+                return;
+            }
+            Type stateType = state.GetType();
+
+            bool recording = (bool)stateType.GetProperty("recording").GetValue(state, null);
+            if (!recording)
+            {
+                ThryLogger.LogWarn("Add Key: Animation Window is not in recording mode.");
+                return;
+            }
+            AnimationClip clip = (AnimationClip)stateType.GetProperty("activeAnimationClip").GetValue(state, null);
+            if (clip == null)
+            {
+                ThryLogger.LogWarn("Add Key: Animation Window has no active clip.");
+                return;
+            }
+            float currentTime = (float)stateType.GetProperty("currentTime").GetValue(state, null);
+
+            Undo.RegisterCompleteObjectUndo(clip, "Add Keyframe to Animation");
+
+            string propertyName = "material." + GetAnimatedPropertyName();
+            void WriteKey(string suffix, float value)
+            {
+                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(path, rendererType, propertyName + suffix);
+                AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding) ?? new AnimationCurve();
+                int existing = -1;
+                for (int i = 0; i < curve.length; i++)
+                {
+                    if (Mathf.Approximately(curve.keys[i].time, currentTime)) { existing = i; break; }
+                }
+                Keyframe key = new Keyframe(currentTime, value);
+                if (existing >= 0) curve.MoveKey(existing, key);
+                else curve.AddKey(key);
+                AnimationUtility.SetEditorCurve(clip, binding, curve);
+            }
+
+            ShaderPropertyType type = MaterialProperty.GetPropertyType();
+            if (type == ShaderPropertyType.Float || type == ShaderPropertyType.Range)
+            {
+                WriteKey("", MaterialProperty.floatValue);
+            }
+#if UNITY_2022_1_OR_NEWER
+            else if (type == ShaderPropertyType.Int)
+            {
+                WriteKey("", MaterialProperty.intValue);
+            }
+#endif
+            else if (type == ShaderPropertyType.Color)
+            {
+                Color c = MaterialProperty.colorValue;
+                WriteKey(".r", c.r);
+                WriteKey(".g", c.g);
+                WriteKey(".b", c.b);
+                WriteKey(".a", c.a);
+            }
+            else if (type == ShaderPropertyType.Vector)
+            {
+                Vector4 v = MaterialProperty.vectorValue;
+                WriteKey(".x", v.x);
+                WriteKey(".y", v.y);
+                WriteKey(".z", v.z);
+                WriteKey(".w", v.w);
+            }
+            else if (type == ShaderPropertyType.Texture)
+            {
+                Vector4 st = MaterialProperty.textureScaleAndOffset;
+                WriteKey(".x", st.x);
+                WriteKey(".y", st.y);
+                WriteKey(".z", st.z);
+                WriteKey(".w", st.w);
+            }
+            else
+            {
+                ThryLogger.LogWarn($"Add Key: Property type {type} is not supported.");
+                return;
+            }
+
+            if (Config.Instance.autoMarkPropertiesAnimated && IsAnimatable && !IsAnimated) SetAnimated(true, false);
+        }
+
+        static object TryGetAnimationWindowState()
+        {
+            Type animWindowType = typeof(Editor).Assembly.GetType("UnityEditor.AnimationWindow");
+            if (animWindowType == null) return null;
+            UnityEngine.Object[] windows = Resources.FindObjectsOfTypeAll(animWindowType);
+            if (windows.Length == 0) return null;
+            object window = windows[0];
+
+            // Unity 2021+: AnimationWindow → m_AnimEditor (AnimEditor) → state (AnimationWindowState)
+            FieldInfo animEditorField = animWindowType.GetField("m_AnimEditor", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (animEditorField != null)
+            {
+                object animEditor = animEditorField.GetValue(window);
+                if (animEditor != null)
+                {
+                    Type animEditorType = animEditor.GetType();
+                    PropertyInfo stateProp = animEditorType.GetProperty("state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    object s = stateProp?.GetValue(animEditor, null);
+                    if (s != null) return s;
+                    FieldInfo stateF = animEditorType.GetField("m_State", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (stateF != null) return stateF.GetValue(animEditor);
+                }
+            }
+
+            // Older Unity fallback: AnimationWindow → m_State directly
+            FieldInfo stateField = animWindowType.GetField("m_State", BindingFlags.NonPublic | BindingFlags.Instance);
+            return stateField?.GetValue(window);
+        }
+
+        static bool IsAnimationWindowRecording()
+        {
+            object state = TryGetAnimationWindowState();
+            if (state == null) return false;
+            PropertyInfo recordingProp = state.GetType().GetProperty("recording");
+            if (recordingProp == null) return false;
+            return (bool)recordingProp.GetValue(state, null);
         }
 
         object ClipToKeyFrame(Type animationCurveType, AnimationClip clip, string path, string propertyPostFix, Type rendererType)
