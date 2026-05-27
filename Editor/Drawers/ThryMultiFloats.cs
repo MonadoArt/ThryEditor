@@ -46,21 +46,26 @@ namespace Thry.ThryEditor.Drawers
                 _otherMaterialProps[i] = sProp.MaterialProperty;
             }
 
-            EditorGUI.LabelField(labelR, label);
+            // UV Tile Discard shape: 4 toggles total, main prop is _UDIM(Face)?DiscardRow*.
+            // Only then do we enable label tooltip + right-click rename.
+            bool isTileDiscardRow = _displayAsToggles && _otherProperties.Length == 3 && TileLabelUtility.IsUdimProperty(prop.name);
+
+            GUIContent rowLabel = isTileDiscardRow && label != null ? new GUIContent(label.text, TileLabelUtility.ROW_TOOLTIP) : label;
+            EditorGUI.LabelField(labelR, rowLabel);
 
             bool anyChanged;
             using (var change_scope = new EditorGUI.ChangeCheckScope())
             {
                 using(var temp_indent = new GUILib.IndentOverrideScope(0))
                 {
-                    PropGUI(prop, editor, contentR, 0);
+                    PropGUI(prop, editor, contentR, 0, isTileDiscardRow ? prop.name : null);
                     editor.EndAnimatedCheck();
                     for (int i = 0; i < _otherMaterialProps.Length; i++)
                     {
                         if (_otherMaterialProps[i] == null)
                             continue;
 
-                        PropGUI(_otherMaterialProps[i], editor, contentR, i + 1);
+                        PropGUI(_otherMaterialProps[i], editor, contentR, i + 1, isTileDiscardRow ? _otherProperties[i] : null);
                     }
                     editor.BeginAnimatedCheck(prop);
                 }
@@ -82,10 +87,14 @@ namespace Thry.ThryEditor.Drawers
             }
         }
 
-        void PropGUI(MaterialProperty prop, MaterialEditor editor, Rect contentRect, int index)
+        void PropGUI(MaterialProperty prop, MaterialEditor editor, Rect contentRect, int index, string tileDiscardPropName = null)
         {
             contentRect.x += contentRect.width * index;
             contentRect.width -= 5;
+
+            // When this row is a UV Tile Discard row, intercept right-click for rename and render the
+            // tag-backed label on a button-style toggle. Otherwise the path is byte-identical to before.
+            if (tileDiscardPropName != null) TileLabelUtility.HandleRightClick(contentRect, editor.targets, tileDiscardPropName, string.Empty);
 
             using (new GUILib.AnimationScope(editor, prop))
             {
@@ -93,7 +102,12 @@ namespace Thry.ThryEditor.Drawers
                 {
                     float val = prop.floatValue;
                     EditorGUI.showMixedValue = prop.hasMixedValue;
-                    if (_displayAsToggles) val = EditorGUI.Toggle(contentRect, val == 1) ? 1 : 0;
+                    if (_displayAsToggles)
+                    {
+                        string tagLabel = tileDiscardPropName != null ? TileLabelUtility.GetTileLabel(editor.target as Material, tileDiscardPropName) : null;
+                        if (!string.IsNullOrEmpty(tagLabel)) val = GUI.Toggle(contentRect, val == 1, tagLabel, "Button") ? 1 : 0;
+                        else val = EditorGUI.Toggle(contentRect, val == 1) ? 1 : 0;
+                    }
                     else val = EditorGUI.FloatField(contentRect, val);
 
                     if(change_scope.changed)

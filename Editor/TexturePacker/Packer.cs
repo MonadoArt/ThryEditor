@@ -132,85 +132,103 @@ namespace Thry.ThryEditor.TexturePacker
             target.filterMode = config.FileOutput.FilterMode;
             target.Create();
 
-            PackShader.SetTexture(0, "Result", target);
-            PackShader.SetFloat("Width", width);
-            PackShader.SetFloat("Height", height);
+            RenderTexture filterInput = null;
+            ComputeBuffer connectionsBuffer = null;
+            ComputeBuffer outputsBuffer = null;
 
-            PackShader.SetFloat("Rotation", config.ImageAdjust.Rotation / 360f * 2f * Mathf.PI);
-            PackShader.SetVector("Scale", config.ImageAdjust.Scale);
-            PackShader.SetVector("Offset", config.ImageAdjust.Offset);
-            PackShader.SetFloat("Hue", config.ImageAdjust.Hue);
-            PackShader.SetFloat("Saturation", config.ImageAdjust.Saturation);
-            PackShader.SetFloat("Brightness", config.ImageAdjust.Brightness);
-
-            bool repeatTextures = Math.Abs(config.ImageAdjust.Scale.x) > 1 || Math.Abs(config.ImageAdjust.Scale.y) > 1;
-
-            // Set Compute Shader Properties
-            ComputeBuffer connectionsBuffer = new ComputeBuffer(config.Connections.Count + 1, System.Runtime.InteropServices.Marshal.SizeOf(typeof(Connection)));
-            connectionsBuffer.SetData(config.Connections.ToArray());
-            PackShader.SetBuffer(0, "Connections", connectionsBuffer);
-            PackShader.SetInt("ConnectionCount", config.Connections.Count);
-
-            ComputeBuffer outputsBuffer = new ComputeBuffer(config.Targets.Length, System.Runtime.InteropServices.Marshal.SizeOf(typeof(OutputTarget)));
-            outputsBuffer.SetData(config.Targets);
-            PackShader.SetBuffer(0, "OutputChannels", outputsBuffer);
-
-            string inputNameFormat = GetInputsNameFormat();
-            for (int i = 0; i < config.Sources.Length; i++)
+            // Must wrap the following in a try/finally to prevent memory leaks. Otherwise,
+            // connectionsBuffer and outputsBuffer are released into memory, which can
+            // stack up very quickly. Additionally, RenderTextures target and optional
+            // filterInput can also be leaked if left unpatched. Yikes!
+            try
             {
-                PackShader.SetTexture(0, string.Format(inputNameFormat, i), config.Sources[i].ComputeShaderTexture);
-            }
-            for (int i = config.Sources.Length; i < 16; i++)
-            {
-                PackShader.SetTexture(0, string.Format(inputNameFormat, i), Texture2D.blackTexture); // dummy textures for unused slots
-            }
-            // Vectors because int and float arrays are broken in compute shaders
-            PackShader.SetVectorArray("InputTextureIsValid", config.Sources.Select(s => s.ComputeShaderTextureIsValid ? Vector4.one : Vector4.zero).ToArray());
+                PackShader.SetTexture(0, "Result", target);
+                PackShader.SetFloat("Width", width);
+                PackShader.SetFloat("Height", height);
 
-            PackShader.Dispatch(0, width / 8 + 1, height / 8 + 1, 1);
+                PackShader.SetFloat("Rotation", config.ImageAdjust.Rotation / 360f * 2f * Mathf.PI);
+                PackShader.SetVector("Scale", config.ImageAdjust.Scale);
+                PackShader.SetVector("Offset", config.ImageAdjust.Offset);
+                PackShader.SetFloat("Hue", config.ImageAdjust.Hue);
+                PackShader.SetFloat("Saturation", config.ImageAdjust.Saturation);
+                PackShader.SetFloat("Brightness", config.ImageAdjust.Brightness);
 
-            if (config.KernelSettings != null)
-            {
-                // Settings Vector4s instead of floats because the SetFloats function is broken
-                float[] kernelNone = KernelSettings.GetKernelPreset(KernelPreset.None, false);
-                PackShader.SetVectorArray("Kernel_X", config.KernelSettings.X.Select((f, i) => new Vector4(Mathf.Lerp(kernelNone[i], f, config.KernelSettings.Strength), 0, 0, 0)).ToArray());
-                PackShader.SetVectorArray("Kernel_Y", config.KernelSettings.X.Select((f, i) => new Vector4(Mathf.Lerp(kernelNone[i], f, config.KernelSettings.Strength), 0, 0, 0)).ToArray());
-                PackShader.SetBool("Kernel_Grayscale", config.KernelSettings.GrayScale);
-                PackShader.SetBool("Kernel_TwoPass", config.KernelSettings.TwoPass);
-                PackShader.SetVector("Kernel_Channels", new Vector4(config.KernelSettings.Channels[0] ? 1 : 0, config.KernelSettings.Channels[1] ? 1 : 0, config.KernelSettings.Channels[2] ? 1 : 0, config.KernelSettings.Channels[3] ? 1 : 0));
+                bool repeatTextures = Math.Abs(config.ImageAdjust.Scale.x) > 1 || Math.Abs(config.ImageAdjust.Scale.y) > 1;
 
-                // define the opposite way, because each loop flips it
-                RenderTexture filterTarget = target;
+                // Set Compute Shader Properties
+                connectionsBuffer = new ComputeBuffer(config.Connections.Count + 1, System.Runtime.InteropServices.Marshal.SizeOf(typeof(Connection)));
+                connectionsBuffer.SetData(config.Connections.ToArray());
+                PackShader.SetBuffer(0, "Connections", connectionsBuffer);
+                PackShader.SetInt("ConnectionCount", config.Connections.Count);
 
-                RenderTexture filterInput = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB64, RenderTextureReadWrite.Linear);
-                filterInput.enableRandomWrite = true;
-                filterInput.filterMode = config.FileOutput.FilterMode;
-                filterInput.Create();
+                outputsBuffer = new ComputeBuffer(config.Targets.Length, System.Runtime.InteropServices.Marshal.SizeOf(typeof(OutputTarget)));
+                outputsBuffer.SetData(config.Targets);
+                PackShader.SetBuffer(0, "OutputChannels", outputsBuffer);
 
-                for (int i = 0; i < config.KernelSettings.Loops; i++)
+                string inputNameFormat = GetInputsNameFormat();
+                for (int i = 0; i < config.Sources.Length; i++)
                 {
-                    RenderTexture temp = filterInput;
-                    filterInput = filterTarget;
-                    filterTarget = temp;
+                    PackShader.SetTexture(0, string.Format(inputNameFormat, i), config.Sources[i].ComputeShaderTexture);
+                }
+                for (int i = config.Sources.Length; i < 16; i++)
+                {
+                    PackShader.SetTexture(0, string.Format(inputNameFormat, i), Texture2D.blackTexture); // dummy textures for unused slots
+                }
+                // Vectors because int and float arrays are broken in compute shaders
+                PackShader.SetVectorArray("InputTextureIsValid", config.Sources.Select(s => s.ComputeShaderTextureIsValid ? Vector4.one : Vector4.zero).ToArray());
 
-                    PackShader.SetTexture(1, "Kernel_Input", filterInput);
-                    PackShader.SetTexture(1, "Result", filterTarget);
-                    PackShader.Dispatch(1, width / 8 + 1, height / 8 + 1, 1);
+                PackShader.Dispatch(0, width / 8 + 1, height / 8 + 1, 1);
+
+                if (config.KernelSettings != null)
+                {
+                    // Settings Vector4s instead of floats because the SetFloats function is broken
+                    float[] kernelNone = KernelSettings.GetKernelPreset(KernelPreset.None, false);
+                    PackShader.SetVectorArray("Kernel_X", config.KernelSettings.X.Select((f, i) => new Vector4(Mathf.Lerp(kernelNone[i], f, config.KernelSettings.Strength), 0, 0, 0)).ToArray());
+                    PackShader.SetVectorArray("Kernel_Y", config.KernelSettings.X.Select((f, i) => new Vector4(Mathf.Lerp(kernelNone[i], f, config.KernelSettings.Strength), 0, 0, 0)).ToArray());
+                    PackShader.SetBool("Kernel_Grayscale", config.KernelSettings.GrayScale);
+                    PackShader.SetBool("Kernel_TwoPass", config.KernelSettings.TwoPass);
+                    PackShader.SetVector("Kernel_Channels", new Vector4(config.KernelSettings.Channels[0] ? 1 : 0, config.KernelSettings.Channels[1] ? 1 : 0, config.KernelSettings.Channels[2] ? 1 : 0, config.KernelSettings.Channels[3] ? 1 : 0));
+
+                    // define the opposite way, because each loop flips it
+                    RenderTexture filterTarget = target;
+
+                    filterInput = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB64, RenderTextureReadWrite.Linear);
+                    filterInput.enableRandomWrite = true;
+                    filterInput.filterMode = config.FileOutput.FilterMode;
+                    filterInput.Create();
+
+                    for (int i = 0; i < config.KernelSettings.Loops; i++)
+                    {
+                        RenderTexture temp = filterInput;
+                        filterInput = filterTarget;
+                        filterTarget = temp;
+
+                        PackShader.SetTexture(1, "Kernel_Input", filterInput);
+                        PackShader.SetTexture(1, "Result", filterTarget);
+                        PackShader.Dispatch(1, width / 8 + 1, height / 8 + 1, 1);
+                    }
+
+                    target = filterTarget;
                 }
 
-                target = filterTarget;
+                Texture2D atlas = new Texture2D(width, height, TextureFormat.RGBA64, true, config.FileOutput.ColorSpace == ColorSpace.Linear);
+                RenderTexture.active = target;
+                atlas.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                atlas.filterMode = config.FileOutput.FilterMode;
+                atlas.wrapMode = TextureWrapMode.Clamp;
+                atlas.alphaIsTransparency = config.FileOutput.AlphaIsTransparency;
+                atlas.Apply();
+                RenderTexture.active = null;
+
+                return atlas;
             }
-
-            Texture2D atlas = new Texture2D(width, height, TextureFormat.RGBA64, true, config.FileOutput.ColorSpace == ColorSpace.Linear);
-            RenderTexture.active = target;
-            atlas.ReadPixels(new Rect(0, 0, width, height), 0, 0);
-            atlas.filterMode = config.FileOutput.FilterMode;
-            atlas.wrapMode = TextureWrapMode.Clamp;
-            atlas.alphaIsTransparency = config.FileOutput.AlphaIsTransparency;
-            atlas.Apply();
-            RenderTexture.active = null;
-
-            return atlas;
+            finally
+            {
+                connectionsBuffer?.Release();
+                outputsBuffer?.Release();
+                if (target != null) target.Release();
+                if (filterInput != null && filterInput != target) filterInput.Release();
+            }
         }
 
         static string GetInputsNameFormat()
@@ -257,36 +275,43 @@ namespace Thry.ThryEditor.TexturePacker
             target.enableRandomWrite = true;
             target.filterMode = input.filterMode;
             target.Create();
-            PackShader.SetTexture(2, "Unpacker_Input", input);
-            PackShader.SetTexture(2, "Result", target);
+            try
+            {
+                PackShader.SetTexture(2, "Unpacker_Input", input);
+                PackShader.SetTexture(2, "Result", target);
 
-            Vector4 r = new Vector4(1, 0, 0, 0);
-            Vector4 g = new Vector4(0, 1, 0, 0);
-            Vector4 b = new Vector4(0, 0, 1, 0);
-            Vector4 a = new Vector4(0, 0, 0, 1);
-            Vector4 none = new Vector4(0, 0, 0, 0);
-            Vector4 addAlpha = new Vector4(0, 0, 0, 1);
-            if (exportAsBlackAndWhite)
-            {
-                if (exportChannels[0])
-                    ExportChannel(input, target, r, r, r, none, addAlpha, "_R", config);
-                if (exportChannels[1])
-                    ExportChannel(input, target, g, g, g, none, addAlpha, "_G", config);
-                if (exportChannels[2])
-                    ExportChannel(input, target, b, b, b, none, addAlpha, "_B", config);
-                if (exportChannels[3])
-                    ExportChannel(input, target, a, a, a, none, addAlpha, "_A", config);
+                Vector4 r = new Vector4(1, 0, 0, 0);
+                Vector4 g = new Vector4(0, 1, 0, 0);
+                Vector4 b = new Vector4(0, 0, 1, 0);
+                Vector4 a = new Vector4(0, 0, 0, 1);
+                Vector4 none = new Vector4(0, 0, 0, 0);
+                Vector4 addAlpha = new Vector4(0, 0, 0, 1);
+                if (exportAsBlackAndWhite)
+                {
+                    if (exportChannels[0])
+                        ExportChannel(input, target, r, r, r, none, addAlpha, "_R", config);
+                    if (exportChannels[1])
+                        ExportChannel(input, target, g, g, g, none, addAlpha, "_G", config);
+                    if (exportChannels[2])
+                        ExportChannel(input, target, b, b, b, none, addAlpha, "_B", config);
+                    if (exportChannels[3])
+                        ExportChannel(input, target, a, a, a, none, addAlpha, "_A", config);
+                }
+                else
+                {
+                    if (exportChannels[0])
+                        ExportChannel(input, target, r, none, none, none, none, "_R", config);
+                    if (exportChannels[1])
+                        ExportChannel(input, target, none, g, none, none, none, "_G", config);
+                    if (exportChannels[2])
+                        ExportChannel(input, target, none, none, b, none, none, "_B", config);
+                    if (exportChannels[3])
+                        ExportChannel(input, target, none, none, none, a, none, "_A", config);
+                }
             }
-            else
+            finally
             {
-                if (exportChannels[0])
-                    ExportChannel(input, target, r, none, none, none, none, "_R", config);
-                if (exportChannels[1])
-                    ExportChannel(input, target, none, g, none, none, none, "_G", config);
-                if (exportChannels[2])
-                    ExportChannel(input, target, none, none, b, none, none, "_B", config);
-                if (exportChannels[3])
-                    ExportChannel(input, target, none, none, none, a, none, "_A", config);
+                target.Release();
             }
         }
 

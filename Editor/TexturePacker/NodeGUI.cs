@@ -500,40 +500,84 @@ namespace Thry.ThryEditor.TexturePacker
 
             GUI.DrawTexture(bg, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0, Colors.backgroundDark, 0, 10);
 
-            if (!TexturePackerConfig.AreImportersLoaded())
-            {
-                TexturePackerConfig.LoadImportersBatch();
-                Repaint();
-            }
+            string currentLabel = _associatedImporter != null ? _associatedImporter.assetPath.Replace("Assets/", "") : "Load previous project";
 
-            int selectedIndex = TexturePackerConfig.AssetImporters.IndexOf(_associatedImporter);
-            EditorGUI.BeginChangeCheck();
-            selectedIndex = EditorGUI.Popup(rObjField, "Load previous project", selectedIndex, TexturePackerConfig.AssetNames.ToArray());
-
-            if (EditorGUI.EndChangeCheck() && selectedIndex >= 0 && selectedIndex < TexturePackerConfig.AssetImporters.Count)
-            {
-
-                TexturePackerConfig newConfig = TexturePackerConfig.Deserialize(TexturePackerConfig.AssetImporters[selectedIndex].userData);
-                try
-                {
-                    InitilizeWithData(newConfig, TexturePackerConfig.AssetImporters[selectedIndex]);
-                }
-                catch (Exception e)
-                {
-                    ThryLogger.LogErr("TexturePacker", $"Could not correctly load config from {TexturePackerConfig.AssetNames[selectedIndex]}: {e.Message}");
-                }
-            }
+            int prefixWidth = 140;
+            Rect rPrefix = new Rect(rObjField.x, rObjField.y, prefixWidth, rObjField.height);
+            Rect rDropdown = new Rect(rObjField.x + prefixWidth, rObjField.y, rObjField.width - prefixWidth, rObjField.height);
+            EditorGUI.LabelField(rPrefix, "Load previous project");
+            if (EditorGUI.DropdownButton(rDropdown, new GUIContent(currentLabel), FocusType.Keyboard)) ShowLoadPreviousProjectDropdown(rDropdown);
 
             Rect rButton = new Rect(rObjField.x + rObjField.width + 5, rObjField.y, 90, rObjField.height);
             if (GUI.Button(rButton, "Clear"))
             {
                 _config = TexturePackerConfig.GetNewConfig();
+                if (_channelPreviewTexture != null && _channelPreviewTexture != _outputTexture)
+                    UnityEngine.Object.DestroyImmediate(_channelPreviewTexture);
+                if (_outputTexture != null)
+                    UnityEngine.Object.DestroyImmediate(_outputTexture);
                 _outputTexture = null;
                 _channelPreviewTexture = null;
                 InitilizeWithData(_config);
             }
         }
-        
+
+        void ShowLoadPreviousProjectDropdown(Rect anchor)
+        {
+            if (!TexturePackerConfig.AreImportersLoaded())
+            {
+                // Avoid performance regression loophole: DO NOT scan every Texture2D in the project
+                // on every OnGUI frame via LoadImportersBatch() + Repaint(), just to populate a
+                // "Load previous project" dropdown the user almost never opens. In a project with
+                // thousands of AssetImporter.GetAtPath() calls per second, it makes Unity's importer
+                // lag for god knows how long. This is especially evident on weaker PCs!
+                try
+                {
+                    while (!TexturePackerConfig.AreImportersLoaded())
+                    {
+                        int loaded = TexturePackerConfig.GetImporterLoadingProgress(out int total);
+                        float progress = total == 0 ? 0f : (float)loaded / total;
+                        if (EditorUtility.DisplayCancelableProgressBar("Thry Texture Packer", total == 0 ? "Scanning project for previous packer configs…" : $"Scanning textures ({loaded}/{total})", progress)) break;
+                        TexturePackerConfig.LoadImportersBatch();
+                    }
+                }
+                finally
+                {
+                    EditorUtility.ClearProgressBar();
+                }
+            }
+
+            GenericMenu menu = new GenericMenu();
+            IList<string> names = TexturePackerConfig.AssetNames;
+            IList<TextureImporter> importers = TexturePackerConfig.AssetImporters;
+            if (names.Count == 0)
+            {
+                menu.AddDisabledItem(new GUIContent("No previous packer configs found"));
+            }
+            else
+            {
+                for (int i = 0; i < names.Count; i++)
+                {
+                    int captured = i;
+                    bool isCurrent = importers[i] == _associatedImporter;
+                    menu.AddItem(new GUIContent(names[i]), isCurrent, () =>
+                    {
+                        TextureImporter importer = TexturePackerConfig.AssetImporters[captured];
+                        TexturePackerConfig newConfig = TexturePackerConfig.Deserialize(importer.userData);
+                        try
+                        {
+                            InitilizeWithData(newConfig, importer);
+                        }
+                        catch (Exception e)
+                        {
+                            ThryLogger.LogErr("TexturePacker", $"Could not correctly load config from {TexturePackerConfig.AssetNames[captured]}: {e.Message}");
+                        }
+                    });
+                }
+            }
+            menu.DropDown(anchor);
+        }
+
         void DrawOutputImageAdjustmentGUI(Rect rect)
         {
             GUI.DrawTexture(rect, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 1, Colors.backgroundDark, 0, 10);
@@ -997,9 +1041,33 @@ namespace Thry.ThryEditor.TexturePacker
 
         void Pack()
         {
+            // Capture and destroy the previous packed textures so they don't leak.
+            // _channelPreviewTexture may alias _outputTexture (see PackForChannelPreview),
+            // so it must be guarded against double-destroy.
+            Texture2D oldOutput = _outputTexture;
+            Texture2D oldPreview = _channelPreviewTexture;
+            _outputTexture = null;
+            _channelPreviewTexture = null;
+
             _outputTexture = Packer.Pack(_config);
             _channelPreviewTexture = PackForChannelPreview();
+
+            if (oldPreview != null && oldPreview != oldOutput)
+                UnityEngine.Object.DestroyImmediate(oldPreview);
+            if (oldOutput != null)
+                UnityEngine.Object.DestroyImmediate(oldOutput);
+
             if (OnChange != null) OnChange(_outputTexture, _config);
+        }
+
+        void OnDestroy()
+        {
+            if (_channelPreviewTexture != null && _channelPreviewTexture != _outputTexture)
+                UnityEngine.Object.DestroyImmediate(_channelPreviewTexture);
+            if (_outputTexture != null)
+                UnityEngine.Object.DestroyImmediate(_outputTexture);
+            _outputTexture = null;
+            _channelPreviewTexture = null;
         }
 
         Texture2D PackForChannelPreview()
@@ -1035,6 +1103,11 @@ namespace Thry.ThryEditor.TexturePacker
         {
             static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
             {
+                if (importedAssets.Length > 0 || deletedAssets.Length > 0 || movedAssets.Length > 0)
+                {
+                    TexturePackerConfig.InvalidateImporterCache();
+                }
+
                 if (s_instance == null) return;
 
                 string[] active_textures = s_instance._config.Sources

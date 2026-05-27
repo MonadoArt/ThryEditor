@@ -318,6 +318,40 @@ namespace Thry
             UnityEngine.Object.DestroyImmediate(material);
         }
 
+        /// <summary>
+        /// ApplyRenderingPresetToMaterial 
+        /// This applies a Rendering Preset (_Mode) value to an existing material by temporarily
+        /// initializing a ShaderEditor Context so that the on_value_actions defined in the
+        /// shader's property attributes are executed (setting blend modes, render queue,
+        /// property values, etc.).
+        /// Use this to apply Rendering Presets outside of the normal Inspector GUI draw loop.
+        /// </summary>
+        public static void ApplyRenderingPresetToMaterial(Material material, float modeValue)
+        {
+            if (material == null || !material.HasProperty(PROPERTY_NAME_IN_SHADER_PRESETS)) return;
+
+            ShaderEditor previousActive = Active;
+            ShaderEditor tempEditor = new ShaderEditor();
+            try
+            {
+                tempEditor.Materials = new Material[] { material };
+                tempEditor.Editor = MaterialEditor.CreateEditor(new UnityEngine.Object[] { material }) as MaterialEditor;
+                tempEditor.Properties = MaterialEditor.GetMaterialProperties(tempEditor.Materials);
+                tempEditor.RenamedPropertySuffix = ShaderOptimizer.GetRenamedPropertySuffix(material);
+                tempEditor.HasCustomRenameSuffix = ShaderOptimizer.HasCustomRenameSuffix(material);
+                Active = tempEditor;
+                tempEditor.SetShader(material.shader);
+                tempEditor.CollectAllProperties();
+
+                if (tempEditor.InShaderPresetsProperty != null) tempEditor.ShaderRenderingPreset = modeValue;
+            }
+            finally
+            {
+                if (tempEditor.Editor != null) UnityEngine.Object.DestroyImmediate(tempEditor.Editor);
+                Active = previousActive;
+            }
+        }
+
         //finds all properties and headers and stores them in correct order
         private void CollectAllProperties()
         {
@@ -973,6 +1007,44 @@ namespace Thry
                 EditorGUIUtility.systemCopyBuffer = materialString;
                 Debug.Log($"Copied material settings to clipboard:\n{materialString}");
             });
+            menu.AddItem(new GUIContent("Copy as Text"), false, () =>
+            {
+                string json = MaterialTextSerializer.Serialize(Materials[0]);
+                if (string.IsNullOrEmpty(json))
+                {
+                    Debug.LogError("Failed to serialize material to text");
+                    return;
+                }
+                EditorGUIUtility.systemCopyBuffer = json;
+                ThryLogger.LogDetail("MaterialTextSerializer", $"Copied material '{Materials[0].name}' as text ({json.Length} chars)");
+            });
+            menu.AddItem(new GUIContent("Paste from Text"), false, () =>
+            {
+                string clip = EditorGUIUtility.systemCopyBuffer;
+                if (!MaterialTextSerializer.TryDeserialize(clip, out var data))
+                {
+                    Debug.LogError("Paste from Text: clipboard does not contain a valid Thry material text payload.");
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(data.shader) && data.shader != Materials[0].shader.name) ThryLogger.LogWarn("MaterialTextSerializer", $"Pasting from shader '{data.shader}' onto '{Materials[0].shader.name}'. Properties that don't exist on the target shader will be skipped.");
+
+                int undoGroup = Undo.GetCurrentGroup();
+                Undo.RecordObjects(Materials, "Paste from Text");
+
+                var scratch = new Material(Materials[0].shader);
+                int applied = MaterialTextSerializer.ApplyToMaterial(data, scratch);
+
+                foreach (var part in ShaderParts) part.CopyFrom(scratch, skipPropertyTypes: MaterialTextSerializer.SkipTextures);
+
+                UnityEngine.Object.DestroyImmediate(scratch);
+
+                Undo.SetCurrentGroupName($"Paste from Text ({applied} properties)");
+                Undo.CollapseUndoOperations(undoGroup);
+
+                ThryLogger.LogDetail("MaterialTextSerializer", $"Pasted {applied} properties from text onto '{Materials[0].name}'");
+            });
+            menu.AddSeparator("");
             menu.AddSeparator("");
             menu.AddItem(new GUIContent("Is Preset"), Presets.IsPreset(Materials[0]), delegate ()
             {

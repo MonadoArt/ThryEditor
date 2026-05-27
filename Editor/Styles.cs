@@ -70,6 +70,9 @@ namespace Thry.ThryEditor
 			}
 		}
 
+		public static Color AnimatedColor => EditorGUIUtility.isProSkin ? new Color(0.3f, 1f, 0.3f) : new Color(0f, 0.5f, 0f);
+		public static Color AnimatedRenamedColor => EditorGUIUtility.isProSkin ? new Color(1f, 0.85f, 0.2f) : new Color(0.55f, 0.4f, 0f);
+
 		private static GUIStyle _animatedIndicatorStyle;
 		public static GUIStyle animatedIndicatorStyle
 		{
@@ -79,11 +82,64 @@ namespace Thry.ThryEditor
 				{
 					_animatedIndicatorStyle = new GUIStyle()
 					{
-						normal = new GUIStyleState() { textColor = EditorGUIUtility.isProSkin ? new Color(0.3f, 1f, 0.3f) : new Color(0f, 0.5f, 0f) },
+						normal = new GUIStyleState() { textColor = AnimatedColor },
 						alignment = TextAnchor.MiddleRight
 					};
 				}
 				return _animatedIndicatorStyle;
+			}
+		}
+
+		private static GUIStyle _animatedRenamedIndicatorStyle;
+		public static GUIStyle animatedRenamedIndicatorStyle
+		{
+			get
+			{
+				if (_animatedRenamedIndicatorStyle == null)
+				{
+					_animatedRenamedIndicatorStyle = new GUIStyle()
+					{
+						normal = new GUIStyleState() { textColor = AnimatedRenamedColor },
+						alignment = TextAnchor.MiddleRight
+					};
+				}
+				return _animatedRenamedIndicatorStyle;
+			}
+		}
+
+		private static GUIStyle _headerAnimatedDotStyle;
+		public static GUIStyle headerAnimatedDotStyle
+		{
+			get
+			{
+				if (_headerAnimatedDotStyle == null)
+				{
+					_headerAnimatedDotStyle = new GUIStyle()
+					{
+						fontSize = 9,
+						normal = new GUIStyleState() { textColor = AnimatedColor },
+						alignment = TextAnchor.MiddleLeft
+					};
+				}
+				return _headerAnimatedDotStyle;
+			}
+		}
+
+		private static GUIStyle _headerAnimatedRenamedDotStyle;
+		public static GUIStyle headerAnimatedRenamedDotStyle
+		{
+			get
+			{
+				if (_headerAnimatedRenamedDotStyle == null)
+				{
+					_headerAnimatedRenamedDotStyle = new GUIStyle()
+					{
+						fontSize = 9,
+						normal = new GUIStyleState() { textColor = AnimatedRenamedColor },
+						alignment = TextAnchor.MiddleLeft
+					};
+				}
+				return _headerAnimatedRenamedDotStyle;
 			}
 		}
 
@@ -210,7 +266,7 @@ namespace Thry.ThryEditor
 	public class Colors
 	{
 		public static readonly Color foreground = EditorGUIUtility.isProSkin ? new Color(0.8f, 0.8f, 0.8f) : Color.black;
-		public static readonly Color backgroundDark = EditorGUIUtility.isProSkin ? new Color(0.27f, 0.27f, 0.27f) : new Color(0.65f, 0.65f, 0.65f);
+		public static readonly Color backgroundDark = EditorGUIUtility.isProSkin ? new Color(0.27f, 0.27f, 0.27f) : new Color(0.70f, 0.70f, 0.70f);
 		public static readonly Color backgroundLight = EditorGUIUtility.isProSkin ? new Color(0.5f, 0.5f, 0.5f) : new Color(0.85f, 0.85f, 0.85f);
 
 		// Drawer colors - centralized for consistency
@@ -238,6 +294,8 @@ namespace Thry.ThryEditor
 		public static readonly GUIStyle thryIcon = CreateIconStyle(LoadTextureByGUID(EditorGUIUtility.isProSkin ? RESOURCE_GUID.ICON_THRY : RESOURCE_GUID.ICON_THRY_INV));
 		public static readonly GUIStyle github = CreateIconStyle(LoadTextureByGUID(EditorGUIUtility.isProSkin ? RESOURCE_GUID.ICON_GITHUB : RESOURCE_GUID.ICON_GITHUB_INV));
 		public static readonly GUIStyle video = CreateVideoIconStyle();
+		public static readonly GUIStyle globallinked = CreateIconStyle(LoadTextureByGUID(EditorGUIUtility.isProSkin ? RESOURCE_GUID.ICON_GLOBALLINK : RESOURCE_GUID.ICON_GLOBALLINK_INV));
+		public static readonly GUIStyle globallinked_active = CreateIconStyle(LoadTextureByGUID(RESOURCE_GUID.ICON_GLOBALLINK_ACTIVE));
 
 		static GUIStyle CreateVideoIconStyle()
 		{

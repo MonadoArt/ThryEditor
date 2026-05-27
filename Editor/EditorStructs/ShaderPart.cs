@@ -727,7 +727,23 @@ namespace Thry.ThryEditor
             DrawingData.IconsPositioningCount = 0;
 
             UpdatedMaterialPropertyReference();
-            DrawInternal(content, rect, useEditorIndent, isInHeader);
+
+            // Every PerformDraw owns its label-color state for the duration of DrawInternal:
+            //   * animated → apply green/amber tint
+            //   * not animated → reset to the captured baseline so a tinted parent (e.g. an
+            //     animated ShaderTextureProperty wrapping reference sub-properties) doesn't bleed
+            //     its color into us. On exit we always restore exactly what was set on entry, so
+            //     the parent's tint resumes for its remaining inline draws (Tiling/Offset, etc.).
+            AnimatedLabelTint tint = AnimatedLabelTint.Begin(IsAnimatable && IsAnimated, IsRenaming);
+            try
+            {
+                DrawInternal(content, rect, useEditorIndent, isInHeader);
+            }
+            finally
+            {
+                tint.End();
+            }
+
             CalculateIconPositions();
             HandleRightClickToggles(isInHeader);
 
@@ -739,6 +755,94 @@ namespace Thry.ThryEditor
             ExecuteClickEvents();
         }
 
+        private struct AnimatedLabelTint
+        {
+            StyleColors _label, _foldout;
+
+            struct StyleColors
+            {
+                public Color normal, onNormal, hover, onHover, focused, onFocused, active, onActive;
+
+                public static StyleColors Capture(GUIStyle s) => new StyleColors
+                {
+                    normal = s.normal.textColor,
+                    onNormal = s.onNormal.textColor,
+                    hover = s.hover.textColor,
+                    onHover = s.onHover.textColor,
+                    focused = s.focused.textColor,
+                    onFocused = s.onFocused.textColor,
+                    active = s.active.textColor,
+                    onActive = s.onActive.textColor,
+                };
+
+                public void Restore(GUIStyle s)
+                {
+                    s.normal.textColor = normal;
+                    s.onNormal.textColor = onNormal;
+                    s.hover.textColor = hover;
+                    s.onHover.textColor = onHover;
+                    s.focused.textColor = focused;
+                    s.onFocused.textColor = onFocused;
+                    s.active.textColor = active;
+                    s.onActive.textColor = onActive;
+                }
+
+                public static void Apply(GUIStyle s, Color c)
+                {
+                    s.normal.textColor = c;
+                    s.onNormal.textColor = c;
+                    s.hover.textColor = c;
+                    s.onHover.textColor = c;
+                    s.focused.textColor = c;
+                    s.onFocused.textColor = c;
+                    s.active.textColor = c;
+                    s.onActive.textColor = c;
+                }
+            }
+
+            // Baseline (un-tinted) state captured once when no tint is active. Used to reset
+            // EditorStyles for nested non-animated draws so a tinted parent property doesn't
+            // bleed its color into independent sub-properties (texture reference props, etc.).
+            static StyleColors s_baselineLabel;
+            static StyleColors s_baselineFoldout;
+            static int s_depth;
+
+            public static AnimatedLabelTint Begin(bool isAnimated, bool isRenaming)
+            {
+                if (s_depth == 0)
+                {
+                    s_baselineLabel = StyleColors.Capture(EditorStyles.label);
+                    s_baselineFoldout = StyleColors.Capture(EditorStyles.foldout);
+                }
+                s_depth++;
+
+                var t = new AnimatedLabelTint
+                {
+                    _label = StyleColors.Capture(EditorStyles.label),
+                    _foldout = StyleColors.Capture(EditorStyles.foldout),
+                };
+                if (isAnimated)
+                {
+                    Color color = (isRenaming ? Styles.animatedRenamedIndicatorStyle : Styles.animatedIndicatorStyle).normal.textColor;
+                    StyleColors.Apply(EditorStyles.label, color);
+                    StyleColors.Apply(EditorStyles.foldout, color);
+                }
+                else
+                {
+                    s_baselineLabel.Restore(EditorStyles.label);
+                    s_baselineFoldout.Restore(EditorStyles.foldout);
+                }
+                return t;
+            }
+
+            public void End()
+            {
+                _label.Restore(EditorStyles.label);
+                _foldout.Restore(EditorStyles.foldout);
+                s_depth--;
+            }
+        }
+
         private void CalculateIconPositions()
         {
             if (this is ShaderTextureProperty == false)
@@ -747,11 +851,19 @@ namespace Thry.ThryEditor
                 if (DrawingData.IconsPositioningCount == 0)
                 {
                     DrawingData.IconsPositioningCount = 1;
-                    DrawingData.IconsPositioningHeights[0] = DrawingData.LastGuiObjectRect.y + (DrawingData.LastGuiObjectRect.height - 16) / 2f;
+                    // Anchor to the top single-line of where the property's label actually sits.
+                    // When Unity (not Thry) renders stacked decorators inside the rect, the label
+                    // is pushed down by the decorator height — GetLabelYOffsetWithinRect reports
+                    // that offset so the A/RA icon stays aligned with the label text.
+                    float labelYOffset = GetLabelYOffsetWithinRect();
+                    float labelLineHeight = Mathf.Min(DrawingData.LastGuiObjectRect.height - labelYOffset, EditorGUIUtility.singleLineHeight);
+                    DrawingData.IconsPositioningHeights[0] = DrawingData.LastGuiObjectRect.y + labelYOffset + (labelLineHeight - 16) / 2f;
                 }
             }
             DrawingData.TooltipCheckRect.width = EditorGUIUtility.labelWidth;
         }
+
+        protected virtual float GetLabelYOffsetWithinRect() => 0f;
 
         private void ExecuteClickEvents()
         {
@@ -766,11 +878,12 @@ namespace Thry.ThryEditor
         
         private void DrawLockedAnimated()
         {
+            GUIStyle style = IsRenaming ? Styles.animatedRenamedIndicatorStyle : Styles.animatedIndicatorStyle;
+            string text = IsRenaming ? "RA" : "A";
             for (int i = 0; i < DrawingData.IconsPositioningCount; i++)
             {
                 Rect r = new Rect(14, DrawingData.IconsPositioningHeights[i], 16, 16);
-                if (IsRenaming) GUI.Label(r, "RA", Styles.animatedIndicatorStyle);
-                else GUI.Label(r, "A", Styles.animatedIndicatorStyle);
+                GUI.Label(r, text, style);
             }
         }
 
@@ -819,6 +932,7 @@ namespace Thry.ThryEditor
                     _contextMenu.AddItem(new GUIContent("Copy Animated Property Name"), false, () => { EditorGUIUtility.systemCopyBuffer = GetAnimatedPropertyName(); });
                     _contextMenu.AddItem(new GUIContent("Copy Animated Property Path"), false, CopyPropertyPath);
                     _contextMenu.AddItem(new GUIContent("Copy Property as Keyframe"), false, CopyPropertyAsKeyframe);
+                    if (IsAnimationWindowRecording()) _contextMenu.AddItem(new GUIContent("Add Keyframe to Animation"), false, AddKeyToAnimationClip);
 #if UNITY_2022_1_OR_NEWER
                     bool isLockedInChildren = false;
                     bool isLockedByAncestor = false;
@@ -1154,6 +1268,144 @@ namespace Thry.ThryEditor
             clipboardField.SetValue(null, keyframeList);
         }
 
+        void AddKeyToAnimationClip()
+        {
+            Transform selected = Selection.activeTransform;
+            Transform root = selected;
+            while (root != null && root.GetComponent<Animator>() == null) root = root.parent;
+            if (selected == null || root == null)
+            {
+                ThryLogger.LogWarn("Add Key: selected object has no Animator in its hierarchy.");
+                return;
+            }
+            string path = (selected != root) ? AnimationUtility.CalculateTransformPath(selected, root) : "";
+
+            Type rendererType = typeof(Renderer);
+            if (selected.GetComponent<SkinnedMeshRenderer>()) rendererType = typeof(SkinnedMeshRenderer);
+            else if (selected.GetComponent<MeshRenderer>()) rendererType = typeof(MeshRenderer);
+
+            object state = TryGetAnimationWindowState();
+            if (state == null)
+            {
+                ThryLogger.LogWarn("Add Key: Unable to access Animation Window state via reflection.");
+                return;
+            }
+            Type stateType = state.GetType();
+
+            bool recording = (bool)stateType.GetProperty("recording").GetValue(state, null);
+            if (!recording)
+            {
+                ThryLogger.LogWarn("Add Key: Animation Window is not in recording mode.");
+                return;
+            }
+            AnimationClip clip = (AnimationClip)stateType.GetProperty("activeAnimationClip").GetValue(state, null);
+            if (clip == null)
+            {
+                ThryLogger.LogWarn("Add Key: Animation Window has no active clip.");
+                return;
+            }
+            float currentTime = (float)stateType.GetProperty("currentTime").GetValue(state, null);
+
+            Undo.RegisterCompleteObjectUndo(clip, "Add Keyframe to Animation");
+
+            string propertyName = "material." + GetAnimatedPropertyName();
+            void WriteKey(string suffix, float value)
+            {
+                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(path, rendererType, propertyName + suffix);
+                AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding) ?? new AnimationCurve();
+                int existing = -1;
+                for (int i = 0; i < curve.length; i++)
+                {
+                    if (Mathf.Approximately(curve.keys[i].time, currentTime)) { existing = i; break; }
+                }
+                Keyframe key = new Keyframe(currentTime, value);
+                if (existing >= 0) curve.MoveKey(existing, key);
+                else curve.AddKey(key);
+                AnimationUtility.SetEditorCurve(clip, binding, curve);
+            }
+
+            ShaderPropertyType type = MaterialProperty.GetPropertyType();
+            if (type == ShaderPropertyType.Float || type == ShaderPropertyType.Range)
+            {
+                WriteKey("", MaterialProperty.floatValue);
+            }
+#if UNITY_2022_1_OR_NEWER
+            else if (type == ShaderPropertyType.Int)
+            {
+                WriteKey("", MaterialProperty.intValue);
+            }
+#endif
+            else if (type == ShaderPropertyType.Color)
+            {
+                Color c = MaterialProperty.colorValue;
+                WriteKey(".r", c.r);
+                WriteKey(".g", c.g);
+                WriteKey(".b", c.b);
+                WriteKey(".a", c.a);
+            }
+            else if (type == ShaderPropertyType.Vector)
+            {
+                Vector4 v = MaterialProperty.vectorValue;
+                WriteKey(".x", v.x);
+                WriteKey(".y", v.y);
+                WriteKey(".z", v.z);
+                WriteKey(".w", v.w);
+            }
+            else if (type == ShaderPropertyType.Texture)
+            {
+                Vector4 st = MaterialProperty.textureScaleAndOffset;
+                WriteKey(".x", st.x);
+                WriteKey(".y", st.y);
+                WriteKey(".z", st.z);
+                WriteKey(".w", st.w);
+            }
+            else
+            {
+                ThryLogger.LogWarn($"Add Key: Property type {type} is not supported.");
+                return;
+            }
+
+            if (Config.Instance.autoMarkPropertiesAnimated && IsAnimatable && !IsAnimated) SetAnimated(true, false);
+        }
+
+        static object TryGetAnimationWindowState()
+        {
+            Type animWindowType = typeof(Editor).Assembly.GetType("UnityEditor.AnimationWindow");
+            if (animWindowType == null) return null;
+            UnityEngine.Object[] windows = Resources.FindObjectsOfTypeAll(animWindowType);
+            if (windows.Length == 0) return null;
+            object window = windows[0];
+
+            // Unity 2021+: AnimationWindow → m_AnimEditor (AnimEditor) → state (AnimationWindowState)
+            FieldInfo animEditorField = animWindowType.GetField("m_AnimEditor", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (animEditorField != null)
+            {
+                object animEditor = animEditorField.GetValue(window);
+                if (animEditor != null)
+                {
+                    Type animEditorType = animEditor.GetType();
+                    PropertyInfo stateProp = animEditorType.GetProperty("state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    object s = stateProp?.GetValue(animEditor, null);
+                    if (s != null) return s;
+                    FieldInfo stateF = animEditorType.GetField("m_State", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (stateF != null) return stateF.GetValue(animEditor);
+                }
+            }
+
+            // Older Unity fallback: AnimationWindow → m_State directly
+            FieldInfo stateField = animWindowType.GetField("m_State", BindingFlags.NonPublic | BindingFlags.Instance);
+            return stateField?.GetValue(window);
+        }
+
+        static bool IsAnimationWindowRecording()
+        {
+            object state = TryGetAnimationWindowState();
+            if (state == null) return false;
+            PropertyInfo recordingProp = state.GetType().GetProperty("recording");
+            if (recordingProp == null) return false;
+            return (bool)recordingProp.GetValue(state, null);
+        }
+
         object ClipToKeyFrame(Type animationCurveType, AnimationClip clip, string path, string propertyPostFix, Type rendererType)
         {
             FieldInfo curvesField = animationCurveType.GetField("m_Keyframes", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
@@ -1171,6 +1423,7 @@ namespace Thry.ThryEditor
             IsAnimated = animated;
             IsRenaming = renamed;
             ShaderOptimizer.SetAnimatedTag(MaterialProperty, IsAnimated ? (IsRenaming ? "2" : "1") : "");
+            (Parent as ShaderGroup)?.SetAnimatedDescendantStateDirty();
         }
 #endregion
 #region Actions / Callbacks

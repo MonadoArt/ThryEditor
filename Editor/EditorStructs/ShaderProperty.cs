@@ -292,8 +292,11 @@ namespace Thry.ThryEditor
                 }
             }
 
+            bool wasAnimated = this.IsAnimated;
+            bool wasRenaming = this.IsRenaming;
             this.IsAnimated = IsAnimatable && tag != "";
             this.IsRenaming = IsAnimatable && tag == "2";
+            if (wasAnimated != this.IsAnimated || wasRenaming != this.IsRenaming) (Parent as ShaderGroup)?.SetAnimatedDescendantStateDirty();
         }
 
         protected override void GUILocaleEditing(bool isInHeader)
@@ -437,6 +440,35 @@ namespace Thry.ThryEditor
         protected virtual void PreDraw() { }
 
         protected virtual void DrawDefault() { }
+
+        // Where inside LastGuiObjectRect does the property's label actually sit?
+        // When _doCustomDrawLogic is true Thry reserves a separate rect for each decorator above,
+        // so the rect is just the property body and the label is at its top → 0.
+        // Otherwise Unity stacks every decorator ([Space], [Header], [ThryDecalPositioning], plus
+        // any other built-in or third-party decorator) above the drawer's body inside the rect.
+        // The drawer's body occupies the BOTTOM `drawerOwnHeight` of the rect, so the offset to
+        // where the label gets drawn is `rect.height - drawerOwnHeight`. This works whether the
+        // property uses a Unity drawer (Vector2, Ramp4, etc.) or Unity's default per-type
+        // rendering, and it implicitly covers decorators that don't register with Thry.
+        protected override float GetLabelYOffsetWithinRect()
+        {
+            if (_doCustomDrawLogic) return 0f;
+            float drawerOwnHeight;
+            if (_drawer != null)
+            {
+                string labelText = _content != null ? _content.text : (MaterialProperty != null ? MaterialProperty.displayName : "");
+                drawerOwnHeight = _drawer.GetPropertyHeight(MaterialProperty, labelText, MyMaterialEditor);
+            }
+            else
+            {
+                // No Unity drawer: Thry either renders the body in a single line (Vector squeeze,
+                // _doForceIntoOneLine, _doDrawTwoFields) or falls back to Unity's per-type default
+                // which is one line for the simple types we care about here.
+                drawerOwnHeight = EditorGUIUtility.singleLineHeight;
+            }
+            float offset = DrawingData.LastGuiObjectRect.height - drawerOwnHeight;
+            return Mathf.Max(0f, offset);
+        }
 
         public override void FindUnusedTextures(List<string> unusedList, bool isEnabled)
         {

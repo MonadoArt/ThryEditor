@@ -129,6 +129,20 @@ namespace Thry.ThryEditor.TexturePacker
             return s_isLoadingImportersDone;
         }
 
+        public static void InvalidateImporterCache()
+        {
+            s_importerGuids = null;
+            s_currentLoadingIndex = 0;
+            s_isLoadingImportersDone = false;
+            s_textureImporterList.Clear();
+        }
+
+        public static int GetImporterLoadingProgress(out int total)
+        {
+            total = s_importerGuids == null ? 0 : s_importerGuids.Length;
+            return Mathf.Min(s_currentLoadingIndex, total);
+        }
+
         public static void LoadImportersBatch()
         {
             if(!s_isLoadingImportersDone)

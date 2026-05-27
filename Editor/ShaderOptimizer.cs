@@ -1001,6 +1001,11 @@ namespace Thry.ThryEditor
             if (!isLocking && Config.Instance.fixKeywordsWhenLocking)
                 ShaderEditor.FixKeywords(materialsToChangeLock);
 
+            if (!isLocking)
+            {
+                foreach (Material m in materialsToChangeLock) GlobalLinker.ApplyAllLinksToMaterial(m);
+            }
+            
             AssetDatabase.StopAssetEditing();
             //unity now compiles all the shaders
 
@@ -2579,7 +2584,9 @@ namespace Thry.ThryEditor
             // But only if no other material is using the locked shader
             string[] lockedMaterials = material.GetTag(TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, false, string.Empty).Split(',');
             string newTag = string.Join(",", lockedMaterials.Where(guid => guid != unlockedMaterialGUID).ToArray());
-            bool isOtherMaterialUsingLockedShader = false;
+            // If the tag had no real GUIDs at all, this is a legacy material from before refcount tracking existed.
+            // Defensively assume something else might still use the locked shader rather than risk turning a sibling pink.
+            bool isOtherMaterialUsingLockedShader = !lockedMaterials.Any(g => !string.IsNullOrWhiteSpace(g));
             foreach(string guid in lockedMaterials)
             {
                 if (string.IsNullOrWhiteSpace(guid)) continue;

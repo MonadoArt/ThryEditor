@@ -49,7 +49,10 @@ namespace Thry.ThryEditor
                 GUILayout.Space(2);
             }
             if (EditorGUI.EndChangeCheck())
+            {
                 UpdateLinkedMaterials();
+                GlobalLinker.OnSectionChanged(this);
+            }
             DrawingData.LastGuiObjectHeaderRect = headerRect;
             DrawingData.LastGuiObjectRect = headerRect;
         }
@@ -95,7 +98,8 @@ namespace Thry.ThryEditor
                 }
                 else
                 {
-                    GUI.Box(rect, new GUIContent("     " + content.text, content.tooltip), Styles.flatHeader);
+                    GUIContent boxContent = new GUIContent("     " + content.text, content.tooltip);
+                    GUI.Box(rect, boxContent, Styles.flatHeader);
                     if (Config.Instance.showNotes && !string.IsNullOrWhiteSpace(Note))
                     {
                         Rect noteRect = new Rect(rect);
@@ -103,8 +107,9 @@ namespace Thry.ThryEditor
                         noteRect.width = Mathf.Max(0f, noteRect.width - reserved);
                         GUI.Label(noteRect, Note, Styles.label_property_note);
                     }
+                    DrawAnimatedDots(rect, boxContent, Styles.flatHeader.padding.left);
                 }
-                
+
                 DrawIcons(rect, options, e);
 
                 Rect togglePropertyRect = new Rect(rect);
@@ -156,7 +161,8 @@ namespace Thry.ThryEditor
                 {
                     int savedPadding = Styles.flatHeader.padding.left;
                     Styles.flatHeader.padding.left = textOffset;
-                    GUI.Box(rect, new GUIContent(content.text, content.tooltip), Styles.flatHeader);
+                    GUIContent boxContent = new GUIContent(content.text, content.tooltip);
+                    GUI.Box(rect, boxContent, Styles.flatHeader);
                     Styles.flatHeader.padding.left = savedPadding;
                     if (Config.Instance.showNotes && !string.IsNullOrWhiteSpace(Note))
                     {
@@ -165,6 +171,7 @@ namespace Thry.ThryEditor
                         noteRect.width = Mathf.Max(0f, noteRect.width - reserved);
                         GUI.Label(noteRect, Note, Styles.label_property_note);
                     }
+                    DrawAnimatedDots(rect, boxContent, textOffset);
                 }
 
                 DrawIcons(rect, options, e);
@@ -205,9 +212,34 @@ namespace Thry.ThryEditor
                     noteRect.width = Mathf.Max(0f, noteRect.width - reserved);
                     GUI.Label(noteRect, Note, Styles.label_property_note);
                 }
+                DrawAnimatedDots(rect, content, Styles.flatHeader.padding.left);
                 DrawIcons(rect, options, e);
             }
 
+        }
+
+        private void DrawAnimatedDots(Rect rect, GUIContent drawnContent, float leftOffset)
+        {
+            if (!Config.Instance.showAnimatedDotOnHeaders) return;
+            if (Event.current.type != EventType.Repaint) return;
+
+            bool a = HasAnimatedDescendant;
+            bool ra = HasRenameAnimatedDescendant;
+            if (!a && !ra) return;
+
+            float pureTextWidth = Styles.flatHeader.CalcSize(drawnContent).x - Styles.flatHeader.padding.horizontal;
+            float x = rect.x + leftOffset + pureTextWidth + 3f;
+            const float dotW = 9f;
+
+            if (a)
+            {
+                GUI.Label(new Rect(x, rect.y, dotW, rect.height), "●", Styles.headerAnimatedDotStyle);
+                x += dotW;
+            }
+            if (ra)
+            {
+                GUI.Label(new Rect(x, rect.y, dotW, rect.height), "●", Styles.headerAnimatedRenamedDotStyle);
+            }
         }
 
         /// <summary>
@@ -230,7 +262,12 @@ namespace Thry.ThryEditor
             DrawDowdownSettings(buttonRect, e);
 
             buttonRect.x -= step;
+            DrawGlobalLinkSettings(buttonRect, e);
+
+            /* OBSOLETE: Material Linking
+            buttonRect.x -= step;
             DrawLinkSettings(buttonRect, e);
+            */
 
             bool hasVideo = options.button_video != null && options.button_video.condition_show.Test();
             if (hasVideo)
@@ -370,6 +407,27 @@ namespace Thry.ThryEditor
             }
         }
 
+        private void DrawGlobalLinkSettings(Rect rect, Event e)
+        {
+            string propName = this.MaterialProperty.name;
+            bool isGloballyLinked = false;
+            foreach (UnityEngine.Object target in ShaderEditor.Active.CurrentProperty.MaterialProperty.targets)
+            {
+                if (target is Material m && GlobalLinker.IsGloballyLinked(m, propName))
+                {
+                    isGloballyLinked = true;
+                    break;
+                }
+            }
+            GUIStyle icon = isGloballyLinked ? Icons.globallinked_active : Icons.globallinked;
+            if (GUILib.Button(rect, icon))
+            {
+                ShaderEditor.Input.Use();
+                GlobalLinker.Popup(this);
+            }
+        }
+
+        /* OBSOLETE: Only expose this for debugging purposes. Use Global Linking instead!
         private void DrawLinkSettings(Rect rect, Event e)
         {
             if (GUILib.Button(rect, Icons.linked, Color.cyan, MaterialLinker.IsLinked(ShaderEditor.Active.CurrentProperty.MaterialProperty)))
@@ -379,6 +437,7 @@ namespace Thry.ThryEditor
                 MaterialLinker.Popup(rect, linked_materials, ShaderEditor.Active.CurrentProperty.MaterialProperty);
             }
         }
+        */
 
         void ShowHeaderContextMenu(Rect position, ShaderHeader property, Material[] materials)
         {
@@ -393,6 +452,7 @@ namespace Thry.ThryEditor
                 if (linked_materials != null)
                     foreach (Material m in linked_materials)
                         property.CopyTo(m, true);
+                GlobalLinker.OnSectionChanged(property);
 
                 Undo.SetCurrentGroupName($"Reset {property.Content.text} of {ShaderEditor.Active.Materials[0].name}");
                 Undo.CollapseUndoOperations(undoGroup);
@@ -413,6 +473,7 @@ namespace Thry.ThryEditor
 
                     property.CopyFrom(Mediator.copy_part);
                     property.UpdateLinkedMaterials();
+                    GlobalLinker.OnSectionChanged(property);
 
                     Undo.SetCurrentGroupName($"Paste {property.Content.text} of {ShaderEditor.Active.Materials[0].name}");
                     Undo.CollapseUndoOperations(undoGroup);
@@ -428,6 +489,7 @@ namespace Thry.ThryEditor
                     var propsToIgnore = new HashSet<ShaderPropertyType> { ShaderPropertyType.Texture };
                     property.CopyFrom(Mediator.copy_part, skipPropertyTypes: propsToIgnore);
                     property.UpdateLinkedMaterials();
+                    GlobalLinker.OnSectionChanged(property);
 
                     Undo.SetCurrentGroupName($"Paste* {property.Content.text} of {ShaderEditor.Active.Materials[0].name}");
                     Undo.CollapseUndoOperations(undoGroup);
@@ -435,8 +497,7 @@ namespace Thry.ThryEditor
             });
             menu.AddItem(new GUIContent("Paste Special..."), false, () =>
             {
-                if(Mediator.copy_material == null || Mediator.copy_part == null)
-                    return;
+                if(Mediator.copy_material == null || Mediator.copy_part == null) return;
                 
                 ThryLogger.LogDetail("ShaderHeader", $"Pasting** '{property.Content.text}' of {ShaderEditor.Active.Materials[0].name}");
                 var popup = ScriptableObject.CreateInstance<PasteSpecialPopup>();
@@ -452,12 +513,53 @@ namespace Thry.ThryEditor
 
                         property.CopyFrom(Mediator.copy_part, skipPropertyNames: ignoreProperties);
                         property.UpdateLinkedMaterials();
+                        GlobalLinker.OnSectionChanged(property);
 
                         Undo.SetCurrentGroupName($"Paste** {property.Content.text} of {ShaderEditor.Active.Materials[0].name}");
                         Undo.CollapseUndoOperations(undoGroup);
                     }
                 };
                 
+            });
+            menu.AddSeparator("");
+            menu.AddItem(new GUIContent("Copy as Text"), false, () =>
+            {
+                string json = MaterialTextSerializer.Serialize(property, materials[0]);
+                if (string.IsNullOrEmpty(json))
+                {
+                    Debug.LogError("Failed to serialize section to text");
+                    return;
+                }
+                EditorGUIUtility.systemCopyBuffer = json;
+                ThryLogger.LogDetail("ShaderHeader", $"Copied section '{property.Content.text}' of {materials[0].name} as text ({json.Length} chars)");
+            });
+            menu.AddItem(new GUIContent("Paste from Text"), false, () =>
+            {
+                string clip = EditorGUIUtility.systemCopyBuffer;
+                if (!MaterialTextSerializer.TryDeserialize(clip, out var data))
+                {
+                    Debug.LogError("Paste from Text: clipboard does not contain a valid Thry material text payload.");
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(data.shader) && data.shader != materials[0].shader.name) ThryLogger.LogWarn("ShaderHeader", $"Pasting from shader '{data.shader}' onto '{materials[0].shader.name}'. Properties that don't exist on the target shader will be skipped.");
+
+                int undoGroup = Undo.GetCurrentGroup();
+                Undo.RecordObjects(materials, $"Paste from Text {property.Content.text}");
+
+                var scratch = new Material(materials[0].shader);
+                int applied = MaterialTextSerializer.ApplyToMaterial(data, scratch);
+
+                property.CopyFrom(scratch, skipPropertyTypes: MaterialTextSerializer.SkipTextures);
+                property.UpdateLinkedMaterials();
+                GlobalLinker.OnSectionChanged(property);
+
+                Object.DestroyImmediate(scratch);
+
+                Undo.SetCurrentGroupName($"Paste from Text {property.Content.text} of {materials[0].name} ({applied} properties)");
+                Undo.CollapseUndoOperations(undoGroup);
+
+                ThryLogger.LogDetail("ShaderHeader", $"Pasted {applied} properties from text onto '{property.Content.text}'");
             });
             menu.AddSeparator("");
             if(Config.Instance.showNotes)
