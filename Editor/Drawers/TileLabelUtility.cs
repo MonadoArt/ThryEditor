@@ -8,6 +8,7 @@
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
+using Thry.ThryEditor.Helpers;
 
 namespace Thry.ThryEditor.Drawers
 {
@@ -105,6 +106,25 @@ namespace Thry.ThryEditor.Drawers
                 {
                     mat.SetOverrideTag(tagKey, value ?? string.Empty);
                     EditorUtility.SetDirty(mat);
+
+                    // Unity interns material tag-value strings in a shared, case-insensitive table.
+                    // If the same letters were already cached under a different capitalization (e.g.
+                    // "hair"), setting "Hair" reads back as the cached "hair". Read it straight back,
+                    // detect the mismatch, and explain - the label still works, only its displayed
+                    // capitalization differs, and it can't be corrected until the cache clears.
+                    if (!string.IsNullOrEmpty(value))
+                    {
+                        string stored = mat.GetTag(tagKey, false, string.Empty);
+                        if (!string.Equals(stored, value, System.StringComparison.Ordinal) && string.Equals(stored, value, System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            ThryLogger.LogWarn("Unity Bug detected! The capitalization of your custom UV Tile Label may be temporarily broken. See Log Message for more details.",
+                                $"Label \"{value}\" was stored as \"{stored}\" on material \"{mat.name}\". " +
+                                "This is a known Unity Bug: tag-value strings are interned case-insensitively, so once these " +
+                                "letters exist in another capitalization Unity reuses that cached casing. The label still works " +
+                                "correctly but only its displayed capitalization is affected. " +
+                                "Restarting Unity Editor should clear this issue.");
+                        }
+                    }
                 }
             }
         }
