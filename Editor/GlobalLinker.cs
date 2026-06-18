@@ -1,20 +1,20 @@
 /// Global Links
-/// 
+///
 /// String-based linking system that keeps Material sections hooked to the same JSON string to share
 /// the same properties - consistently and reliably. Intended to serve as a spiritual replacement
 /// to Material Linking, as Global Linking does not rely on requiring Materials to be linked to one
 /// another. Rather, it relies on a singular string to keep material sections linked together.
-/// 
+///
 /// Hardened to work against changes from the user regardless if Materials are locked or not. If
 /// a Globally-Linked Material is in a Locked Material, it will instantly update with the values
 /// stored in the JSON if any changes were made. Additionally, allows APIs to hook to it.
-/// 
+///
 /// Script designed by BluWizard LABS, licensed for exclusive usage in Thry Editor.
-///  
+///
 /// Copyright (c) 2026 BluWizard LABS. All Rights Reserved.
-/// 
+///
 /// MIT License
-/// 
+///
 /// Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 /// and associated documentation files (the "Software"), to deal in the Software without restriction,
 /// including without limitation the rights to use, copy, modify, merge, publish, distribute,
@@ -23,7 +23,7 @@
 ///
 /// The above copyright notice and this permission notice shall be included in all copies or
 /// substantial portions of the Software.
-/// 
+///
 /// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
 /// BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 /// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -263,6 +263,7 @@ namespace Thry.ThryEditor
                 Material target = AssetDatabase.LoadAssetAtPath<Material>(path);
                 if (target != null) ApplyLinkToMaterial(link, target, recordUndo: true);
             }
+            RequestRepaint();
         }
 
         public static void OverwriteLinkFromSection(GlobalLink link, ShaderGroup section)
