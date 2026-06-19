@@ -596,12 +596,19 @@ namespace Thry.ThryEditor
             string guid = PresetCollections[collection].GetGuid(name);
             Material preset = GetPresetMaterial(guid);
 
+            // Clean up the previous revert snapshot for this material, if any, before replacing it.
+            if (s_appliedPresets.TryGetValue(key, out AppliedPreset previous) && previous.prePresetState != null)
+            {
+                UnityEngine.Object.DestroyImmediate(previous.prePresetState);
+            }
             s_appliedPresets[key] = AppliedPreset.Create(name, preset, shaderEditor.Materials[0], parent);
             ApplyPresetInternal(shaderEditor, preset, preset, parent);
             GlobalLinker.PropagateAfterPreset(shaderEditor, preset, parent);
             PropagateLinkedMaterials(shaderEditor, preset, parent);
             foreach (Material m in shaderEditor.Materials)
+            {
                 MaterialEditor.ApplyMaterialPropertyDrawers(m);
+            }
         }
 
         static void Revert(ShaderEditor shaderEditor)
@@ -614,15 +621,20 @@ namespace Thry.ThryEditor
             GlobalLinker.PropagateAfterPreset(shaderEditor, appliedPreset.preset, appliedPreset.parent);
             PropagateLinkedMaterials(shaderEditor, appliedPreset.preset, appliedPreset.parent);
             foreach (Material m in shaderEditor.Materials)
+            {
                 MaterialEditor.ApplyMaterialPropertyDrawers(m);
+            }
             s_appliedPresets.Remove(key);
+            if (appliedPreset.prePresetState != null) UnityEngine.Object.DestroyImmediate(appliedPreset.prePresetState);
         }
 
         static void Dismiss(ShaderEditor shaderEditor)
         {
             Material key = shaderEditor.Materials[0];
-            if (s_appliedPresets.Remove(key))
+            if (s_appliedPresets.TryGetValue(key, out AppliedPreset appliedPreset))
             {
+                s_appliedPresets.Remove(key);
+                if (appliedPreset.prePresetState != null) UnityEngine.Object.DestroyImmediate(appliedPreset.prePresetState);
                 ThryLogger.Log($"Dismissed revert state for '{key.name}'");
             }
         }
@@ -644,12 +656,18 @@ namespace Thry.ThryEditor
 
         static void ApplyPresetInternal(ShaderEditor shaderEditor, Material preset, Material copyFrom, ShaderPart parent)
         {
-            // Swap shader to make sure all properties are available
-            // And prevent stuff like missing shaders making presets unusable
-            Shader prev = preset.shader;
-            preset.shader = shaderEditor.Shader;
+            // Work on a temporary in-memory clone so the preset asset on disk is never dirtied.
+            // We need the editor's shader assigned to make sure all properties are available
+            // (and to prevent stuff like missing shaders making presets unusable), but doing
+            // that on the asset itself leaves it modified-but-unsaved (e.g. a preset stored on
+            // the Standard shader keeps orphaned properties after the swap), which triggers a
+            // "Original shader not saved to material" warning when the scene is saved.
+            Material source = new Material(preset);
+            source.shader = shaderEditor.Shader;
+            // If values were meant to be copied straight from the preset, read them from the clone instead.
+            if (copyFrom == preset) copyFrom = source;
 
-            if(!IsMaterialSectionedPreset(preset))
+            if (!IsMaterialSectionedPreset(preset))
             {
                 ThryLogger.LogDetail($"Apply preset '{preset.name}' to '{shaderEditor.Materials[0].name}'");
                 foreach (ShaderPart part in shaderEditor.ShaderParts)
@@ -662,12 +680,14 @@ namespace Thry.ThryEditor
                             part.CopyFrom(copyFrom, applyDrawers: false, copyReferenceProperties: false);
                     }
                 }
-            }else if(parent is ShaderGroup)
+            }
+            else if(parent is ShaderGroup)
             {
                 ThryLogger.LogDetail($"Apply values from '{copyFrom.name}' to '{parent.Content.text}' group");
                 ApplyPresetRecursive(preset, copyFrom, parent as ShaderGroup);
             }
-            preset.shader = prev;
+
+            UnityEngine.Object.DestroyImmediate(source);
         }
         
         static void ApplyPresetRecursive(Material preset, Material copyFrom, ShaderGroup parent)

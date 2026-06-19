@@ -6,6 +6,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 using static UnityEditor.MaterialProperty;
+using Thry.ThryEditor.Drawers;
 
 namespace Thry.ThryEditor
 {
@@ -127,6 +128,8 @@ namespace Thry.ThryEditor
             UpdatedMaterialPropertyReference();
 
             MaterialHelper.CopyValue(src, MaterialProperty);
+            TileLabelUtility.CopyTileLabelTag(src, MaterialProperty);
+            CopyUdimSiblingsFrom(src, skipPropertyTypes, skipPropertyNames);
             if (copyReferenceProperties)
                 CopyReferencePropertiesFrom(src, skipPropertyTypes, skipPropertyNames);
 
@@ -153,6 +156,8 @@ namespace Thry.ThryEditor
             src.UpdatedMaterialPropertyReference();
 
             MaterialHelper.CopyValue(src.MaterialProperty, MaterialProperty);
+            TileLabelUtility.CopyTileLabelTag(src.MaterialProperty, MaterialProperty);
+            CopyUdimSiblingsFrom(src, skipPropertyTypes, skipPropertyNames);
             if (copyReferenceProperties)
                 CopyReferencePropertiesFrom(src, skipPropertyTypes, skipPropertyNames);
 
@@ -175,6 +180,8 @@ namespace Thry.ThryEditor
             UpdatedMaterialPropertyReference();
 
             MaterialHelper.CopyValue(MaterialProperty, targets);
+            TileLabelUtility.CopyTileLabelTag(MaterialProperty, targets);
+            CopyUdimSiblingsTo(targets, skipPropertyTypes, skipPropertyNames);
             if (copyReferenceProperties)
                 CopyReferencePropertiesTo(targets, skipPropertyTypes, skipPropertyNames);
 
@@ -199,6 +206,8 @@ namespace Thry.ThryEditor
             target.UpdatedMaterialPropertyReference();
 
             MaterialHelper.CopyValue(MaterialProperty, target.MaterialProperty);
+            TileLabelUtility.CopyTileLabelTag(MaterialProperty, target.MaterialProperty);
+            CopyUdimSiblingsTo(target, skipPropertyTypes, skipPropertyNames);
             if (copyReferenceProperties)
                 CopyReferencePropertiesTo(target, skipPropertyTypes, skipPropertyNames);
 
@@ -210,6 +219,60 @@ namespace Thry.ThryEditor
 
             target.RaisePropertyValueChanged();
             if (applyDrawers) MaterialEditor.ApplyMaterialPropertyDrawers(target.MaterialProperty.targets as Material[]);
+        }
+
+        // UV Tile Discard rows expose only their column-0 tile in the inspector; columns 1-3 are
+        // [HideInInspector] and so are absent from a section's copyable children. When the visible column
+        // is copied, pull its three hidden siblings along (resolved from the PropertyDictionary) so the
+        // whole row's on/off values travel. Returns early for every non-tile property, and the gate on
+        // the column-0 name means the siblings themselves never re-enter this and recurse.
+        void CopyUdimSiblingsFrom(Material src, HashSet<ShaderPropertyType> skipPropertyTypes, HashSet<string> skipPropertyNames)
+        {
+            var siblings = TileLabelUtility.GetHiddenSiblingPropertyNames(MaterialProperty.name);
+            if (siblings == null || MyShaderUI?.PropertyDictionary == null) return;
+            foreach (var name in siblings)
+            {
+                if (MyShaderUI.PropertyDictionary.TryGetValue(name, out var tgt))
+                {
+                    tgt.CopyFrom(src, false, false, false, skipPropertyTypes, skipPropertyNames);
+                }
+            }
+        }
+        void CopyUdimSiblingsFrom(ShaderProperty src, HashSet<ShaderPropertyType> skipPropertyTypes, HashSet<string> skipPropertyNames)
+        {
+            var siblings = TileLabelUtility.GetHiddenSiblingPropertyNames(MaterialProperty.name);
+            if (siblings == null || MyShaderUI?.PropertyDictionary == null || src.MyShaderUI?.PropertyDictionary == null) return;
+            foreach (var name in siblings)
+            {
+                if (MyShaderUI.PropertyDictionary.TryGetValue(name, out var tgt) && src.MyShaderUI.PropertyDictionary.TryGetValue(name, out var srcSib))
+                {
+                    tgt.CopyFrom(srcSib, false, false, false, skipPropertyTypes, skipPropertyNames);
+                }
+            }
+        }
+        void CopyUdimSiblingsTo(Material[] targets, HashSet<ShaderPropertyType> skipPropertyTypes, HashSet<string> skipPropertyNames)
+        {
+            var siblings = TileLabelUtility.GetHiddenSiblingPropertyNames(MaterialProperty.name);
+            if (siblings == null || MyShaderUI?.PropertyDictionary == null) return;
+            foreach (var name in siblings)
+            {
+                if (MyShaderUI.PropertyDictionary.TryGetValue(name, out var srcSib))
+                {
+                    srcSib.CopyTo(targets, false, false, false, skipPropertyTypes, skipPropertyNames);
+                }
+            }
+        }
+        void CopyUdimSiblingsTo(ShaderProperty target, HashSet<ShaderPropertyType> skipPropertyTypes, HashSet<string> skipPropertyNames)
+        {
+            var siblings = TileLabelUtility.GetHiddenSiblingPropertyNames(MaterialProperty.name);
+            if (siblings == null || MyShaderUI?.PropertyDictionary == null || target.MyShaderUI?.PropertyDictionary == null) return;
+            foreach (var name in siblings)
+            {
+                if (MyShaderUI.PropertyDictionary.TryGetValue(name, out var srcSib) && target.MyShaderUI.PropertyDictionary.TryGetValue(name, out var tgtSib))
+                {
+                    srcSib.CopyTo(tgtSib, false, false, false, skipPropertyTypes, skipPropertyNames);
+                }
+            }
         }
 
         private void SetKeywordState(Material[] materials, bool enabled)

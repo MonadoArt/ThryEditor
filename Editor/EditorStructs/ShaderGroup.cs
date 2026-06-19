@@ -176,8 +176,21 @@ namespace Thry.ThryEditor
             if (copyReferenceProperties)
                 CopyReferencePropertiesFrom(src, skipPropertyTypes, skipPropertyNames);
 
-            for (int i = 0; deepCopy && i < src.Children.Count && i < Children.Count; i++)
-                Children[i].CopyFrom(src.Children[i], false, true, copyReferenceProperties, skipPropertyTypes, skipPropertyNames);
+            // Match children by property name rather than by index. Matching by index breaks when
+            // copying between shaders whose modules have added/removed/reordered properties,
+            // causing values to land on the wrong properties even when the names line up.
+            if (deepCopy)
+            {
+                Dictionary<string, ShaderPart> targetChildrenByName = BuildChildLookup(Children);
+                foreach (ShaderPart srcChild in src.Children)
+                {
+                    if (srcChild.MaterialProperty == null) continue;
+                    if (targetChildrenByName.TryGetValue(srcChild.MaterialProperty.name, out ShaderPart targetChild))
+                    {
+                        targetChild.CopyFrom(srcChild, false, true, copyReferenceProperties, skipPropertyTypes, skipPropertyNames);
+                    }
+                }
+            }
 
             if (applyDrawers) MyShaderUI.ApplyDrawers();
         }
@@ -204,10 +217,35 @@ namespace Thry.ThryEditor
             if (copyReferenceProperties)
                 CopyReferencePropertiesTo(target, skipPropertyTypes, skipPropertyNames);
 
-            for (int i = 0; deepCopy && i < Children.Count && i < target.Children.Count; i++)
-                Children[i].CopyTo(target.Children[i], false, true, copyReferenceProperties, skipPropertyTypes, skipPropertyNames);
+            // Match children by property name rather than by index, so copying between shaders whose
+            // modules have added/removed/reordered properties still aligns correctly.
+            if (deepCopy)
+            {
+                Dictionary<string, ShaderPart> targetChildrenByName = BuildChildLookup(target.Children);
+                foreach (ShaderPart srcChild in Children)
+                {
+                    if (srcChild.MaterialProperty == null) continue;
+                    if (targetChildrenByName.TryGetValue(srcChild.MaterialProperty.name, out ShaderPart targetChild))
+                    {
+                        srcChild.CopyTo(targetChild, false, true, copyReferenceProperties, skipPropertyTypes, skipPropertyNames);
+                    }
+                }
+            }
 
             if (applyDrawers) MaterialEditor.ApplyMaterialPropertyDrawers(target.MaterialProperty.targets);
+        }
+
+        // Builds a property name -> child lookup for name-based copy matching. Children without a backing
+        // MaterialProperty (e.g. labels) carry no value and are skipped; on duplicate names, the first wins.
+        private static Dictionary<string, ShaderPart> BuildChildLookup(IEnumerable<ShaderPart> children)
+        {
+            Dictionary<string, ShaderPart> lookup = new Dictionary<string, ShaderPart>();
+            foreach (ShaderPart child in children)
+            {
+                if (child.MaterialProperty == null) continue;
+                if (!lookup.ContainsKey(child.MaterialProperty.name)) lookup.Add(child.MaterialProperty.name, child);
+            }
+            return lookup;
         }
 
         protected override void DrawInternal(GUIContent content, Rect? rect = null, bool useEditorIndent = false, bool isInHeader = false)

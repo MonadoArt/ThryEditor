@@ -8,6 +8,7 @@
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
+using Thry.ThryEditor.Helpers;
 
 namespace Thry.ThryEditor.Drawers
 {
@@ -105,6 +106,92 @@ namespace Thry.ThryEditor.Drawers
                 {
                     mat.SetOverrideTag(tagKey, value ?? string.Empty);
                     EditorUtility.SetDirty(mat);
+
+                    // Unity interns material tag-value strings in a shared, case-insensitive table.
+                    // If the same letters were already cached under a different capitalization (e.g.
+                    // "hair"), setting "Hair" reads back as the cached "hair". Read it straight back,
+                    // detect the mismatch, and explain - the label still works, only its displayed
+                    // capitalization differs, and it can't be corrected until the cache clears.
+                    if (!string.IsNullOrEmpty(value))
+                    {
+                        string stored = mat.GetTag(tagKey, false, string.Empty);
+                        if (!string.Equals(stored, value, System.StringComparison.Ordinal) && string.Equals(stored, value, System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            ThryLogger.LogWarn("Unity Bug detected! The capitalization of your custom UV Tile Label may be temporarily broken. See Log Message for more details.",
+                                $"Label \"{value}\" was stored as \"{stored}\" on material \"{mat.name}\". " +
+                                "This is a known Unity Bug: tag-value strings are interned case-insensitively, so once these " +
+                                "letters exist in another capitalization Unity reuses that cached casing. The label still works " +
+                                "correctly but only its displayed capitalization is affected. " +
+                                "Restarting Unity Editor should clear this issue.");
+                        }
+                    }
+                }
+            }
+        }
+        // Splits a UDIM tile property into its row prefix so the whole 4-tile row can be addressed.
+        static readonly Regex UDIM_ROW_SPLIT = new Regex(@"^(_UDIM(?:Face)?DiscardRow\d)_\d$", RegexOptions.Compiled);
+        // Matches only the visible column-0 tile of a row (the one carrying the drawer).
+        static readonly Regex UDIM_MAIN_COLUMN = new Regex(@"^(_UDIM(?:Face)?DiscardRow\d)_0$", RegexOptions.Compiled);
+        // If `propertyName` is the visible column-0 of a UV Tile Discard row, returns the property names
+        // of its three hidden sibling columns (…_1, …_2, …_3); otherwise null. The siblings are
+        // [HideInInspector], so they aren't part of a section's copyable children — copying the visible
+        // column has to pull them along for the on/off values to travel. Canonical (unlocked) names;
+        // gating on column-0 also prevents the siblings from recursively re-copying the row.
+        internal static string[] GetHiddenSiblingPropertyNames(string propertyName)
+        {
+            if (string.IsNullOrEmpty(propertyName)) return null;
+            Match m = UDIM_MAIN_COLUMN.Match(CanonicalPropertyName(propertyName));
+            if (!m.Success) return null;
+            string row = m.Groups[1].Value;
+            return new[] { row + "_1", row + "_2", row + "_3" };
+        }
+
+        // The canonical names of all four tile columns in the row that `propertyName` belongs to,
+        // or null if it isn't a UDIM tile property. Lets a copy of the single visible row property
+        // (column 0) also carry the labels of its three hidden sibling columns, since those siblings
+        // are [HideInInspector] and never travel through the normal section copy on their own.
+        internal static string[] GetRowColumnCanonicalNames(string propertyName)
+        {
+            if (string.IsNullOrEmpty(propertyName)) return null;
+            Match m = UDIM_ROW_SPLIT.Match(CanonicalPropertyName(propertyName));
+            if (!m.Success) return null;
+            string row = m.Groups[1].Value;
+            return new[] { row + "_0", row + "_1", row + "_2", row + "_3" };
+        }
+        // Copy helpers mirror ShaderOptimizer.CopyAnimatedTag so the custom tile label travels with the
+        // property during section/material Copy & Paste. Each no-ops on non-UDIM properties. Tags are
+        // canonical-name keyed so they line up even when source/target are locked with different suffixes.
+        internal static void CopyTileLabelTag(Material source, MaterialProperty target)
+        {
+            if (source == null || target == null) return;
+            string[] cols = GetRowColumnCanonicalNames(target.name);
+            if (cols == null) return;
+            CopyRowTags(source, cols, target.targets);
+        }
+        internal static void CopyTileLabelTag(MaterialProperty source, MaterialProperty target)
+        {
+            if (source == null || target == null) return;
+            string[] cols = GetRowColumnCanonicalNames(source.name);
+            if (cols == null) return;
+            CopyRowTags(source.targets[0] as Material, cols, target.targets);
+        }
+        internal static void CopyTileLabelTag(MaterialProperty source, Material[] targets)
+        {
+            if (source == null || targets == null) return;
+            string[] cols = GetRowColumnCanonicalNames(source.name);
+            if (cols == null) return;
+            CopyRowTags(source.targets[0] as Material, cols, targets);
+        }
+        static void CopyRowTags(Material source, string[] canonicalColumns, Object[] targets)
+        {
+            if (source == null || canonicalColumns == null || targets == null) return;
+            foreach (string col in canonicalColumns)
+            {
+                string key = TAG_PREFIX + col;
+                string val = source.GetTag(key, false, string.Empty);
+                foreach (var t in targets)
+                {
+                    if (t is Material m) m.SetOverrideTag(key, val);
                 }
             }
         }
