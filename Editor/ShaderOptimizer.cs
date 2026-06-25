@@ -2882,6 +2882,8 @@ namespace Thry.ThryEditor
 
             bool IVRCSDKBuildRequestedCallback.OnBuildRequested(VRCSDKRequestedBuildType requestedBuildType)
             {
+                if (Config.Instance.enableDeveloperMode && Config.Instance.disableUnlockedShaderStrippingOnBuild)
+                    return true;
                 List<Material> materials = new List<Material>();
                 if (requestedBuildType == VRCSDKRequestedBuildType.Scene)
                 {
