@@ -249,18 +249,39 @@ namespace Thry.ThryEditor
         [MenuItem("Assets/Thry/Shaders/New Material Blueprint", priority = 381)]
         static void CreateNewBlueprint()
         {
-            AssetCreationActionWrapper.StartNameEditing(CreateInstance<DoCreateNewBlueprint>(), "New Material Blueprint.asset", EditorGUIUtility.IconContent("ScriptableObject Icon").image as Texture2D);
+            Texture2D icon = EditorGUIUtility.IconContent("ScriptableObject Icon").image as Texture2D;
+#if UNITY_6000_5_OR_NEWER
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(EntityId.None, CreateInstance<DoCreateNewBlueprint>(), "New Material Blueprint.asset", icon, null);
+#else
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(0, CreateInstance<DoCreateNewBlueprint>(), "New Material Blueprint.asset", icon, null);
+#endif
         }
 
-        class DoCreateNewBlueprint : AssetCreationActionWrapper
+#if UNITY_6000_5_OR_NEWER
+        class DoCreateNewBlueprint : AssetCreationEndAction
         {
-            protected override void OnCreateAsset(string pathName, string resourceFile)
+            public override void Action(EntityId instanceId, string pathName, string resourceFile)
             {
-                var blueprint = CreateInstance<Blueprint>();
-                blueprint.name = Path.GetFileNameWithoutExtension(pathName);
-                AssetDatabase.CreateAsset(blueprint, pathName);
-                Selection.activeObject = blueprint;
+                CreateBlueprintAsset(pathName);
             }
+        }
+#else
+        class DoCreateNewBlueprint : EndNameEditAction
+        {
+            public override void Action(int instanceId, string pathName, string resourceFile)
+            {
+                CreateBlueprintAsset(pathName);
+            }
+        }
+#endif
+
+        static void CreateBlueprintAsset(string pathName)
+        {
+            var blueprint = CreateInstance<Blueprint>();
+            blueprint.name = Path.GetFileNameWithoutExtension(pathName);
+            AssetDatabase.CreateAsset(blueprint, pathName);
+            AssetDatabase.Refresh();
+            Selection.activeObject = blueprint;
         }
 
         [MenuItem("Assets/Thry/Shaders/Create Material from Blueprint", priority = 382)]
