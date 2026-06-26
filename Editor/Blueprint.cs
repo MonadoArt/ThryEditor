@@ -249,12 +249,12 @@ namespace Thry.ThryEditor
         [MenuItem("Assets/Thry/Shaders/New Material Blueprint", priority = 381)]
         static void CreateNewBlueprint()
         {
-            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(0, CreateInstance<DoCreateNewBlueprint>(), "New Material Blueprint.asset", EditorGUIUtility.IconContent("ScriptableObject Icon").image as Texture2D, null);
+            AssetCreationActionWrapper.StartNameEditing(CreateInstance<DoCreateNewBlueprint>(), "New Material Blueprint.asset", EditorGUIUtility.IconContent("ScriptableObject Icon").image as Texture2D);
         }
 
-        class DoCreateNewBlueprint : EndNameEditAction
+        class DoCreateNewBlueprint : AssetCreationActionWrapper
         {
-            public override void Action(int instanceId, string pathName, string resourceFile)
+            protected override void OnCreateAsset(string pathName, string resourceFile)
             {
                 var blueprint = CreateInstance<Blueprint>();
                 blueprint.name = Path.GetFileNameWithoutExtension(pathName);

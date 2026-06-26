@@ -299,17 +299,15 @@ namespace Thry.ThryEditor.ShaderTranslations
         static void CreateNewTranslationDefinition()
         {
             // This allows you to name your asset before creating it
-            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(
-               0,
+            AssetCreationActionWrapper.StartNameEditing(
                CreateInstance<DoCreateNewTranslationDefinition>(),
                "New Translation Definition.asset",
-               EditorGUIUtility.IconContent("ScriptableObject Icon").image as Texture2D,
-               null);
+               EditorGUIUtility.IconContent("ScriptableObject Icon").image as Texture2D);
         }
 
-        class DoCreateNewTranslationDefinition : EndNameEditAction
+        class DoCreateNewTranslationDefinition : AssetCreationActionWrapper
         {
-            public override void Action(int instanceId, string pathName, string resourceFile)
+            protected override void OnCreateAsset(string pathName, string resourceFile)
             {
                 var translator = CreateInstance<ShaderTranslator>();
                 translator.name = Path.GetFileNameWithoutExtension(pathName);
