@@ -299,24 +299,39 @@ namespace Thry.ThryEditor.ShaderTranslations
         static void CreateNewTranslationDefinition()
         {
             // This allows you to name your asset before creating it
-            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(
-               0,
-               CreateInstance<DoCreateNewTranslationDefinition>(),
-               "New Translation Definition.asset",
-               EditorGUIUtility.IconContent("ScriptableObject Icon").image as Texture2D,
-               null);
+            Texture2D icon = EditorGUIUtility.IconContent("ScriptableObject Icon").image as Texture2D;
+#if UNITY_6000_5_OR_NEWER
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(EntityId.None, CreateInstance<DoCreateNewTranslationDefinition>(), "New Translation Definition.asset", icon, null);
+#else
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(0, CreateInstance<DoCreateNewTranslationDefinition>(), "New Translation Definition.asset", icon, null);
+#endif
         }
 
+#if UNITY_6000_5_OR_NEWER
+        class DoCreateNewTranslationDefinition : AssetCreationEndAction
+        {
+            public override void Action(EntityId instanceId, string pathName, string resourceFile)
+            {
+                CreateTranslationDefinitionAsset(pathName);
+            }
+        }
+#else
         class DoCreateNewTranslationDefinition : EndNameEditAction
         {
             public override void Action(int instanceId, string pathName, string resourceFile)
             {
-                var translator = CreateInstance<ShaderTranslator>();
-                translator.name = Path.GetFileNameWithoutExtension(pathName);
-                AssetDatabase.CreateAsset(translator, pathName);
-                Selection.activeObject = translator;
-                TranslationDefinitions.Add(translator);
+                CreateTranslationDefinitionAsset(pathName);
             }
+        }
+#endif
+
+        static void CreateTranslationDefinitionAsset(string pathName)
+        {
+            var translator = CreateInstance<ShaderTranslator>();
+            translator.name = Path.GetFileNameWithoutExtension(pathName);
+            AssetDatabase.CreateAsset(translator, pathName);
+            Selection.activeObject = translator;
+            TranslationDefinitions.Add(translator);
         }
     }
 }
