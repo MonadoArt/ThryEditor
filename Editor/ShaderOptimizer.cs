@@ -246,6 +246,7 @@ namespace Thry.ThryEditor
             "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RealtimeLights.hlsl",
             "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RenderingLayers.hlsl",
             "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl",
+            "Packages/com.unity.render-pipelines.universal/ShaderLibrary/LODCrossFade.hlsl",
             "Packages/com.unity.render-pipelines.xboxone/ShaderLibrary/API/XBoxOne.hlsl"
         };
 
