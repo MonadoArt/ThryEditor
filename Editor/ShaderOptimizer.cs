@@ -86,6 +86,11 @@ namespace Thry.ThryEditor
         //When locking don't include code from define blocks that are not enabled
         const bool REMOVE_UNUSED_IF_DEFS = true;
 
+        // When locking, drop detected serialized textures whose properties the current shader no longer declares,
+        // which can cause issues with bloating memory on the material. Set this to true to take care of them.
+        // Switch this to false to keep them in.
+        const bool REMOVE_ORPHANED_TEXTURES = true;
+
         // For some reason, 'if' statements with replaced constant (literal) conditions cause some compilation error
         // So until that is figured out, branches will be removed by default
         // Set to false if you want to keep UNITY_BRANCH and [branch]
@@ -1642,7 +1647,12 @@ namespace Thry.ThryEditor
                 string propName = prop.FindPropertyRelative("first").stringValue;
                 Object propTex = prop.FindPropertyRelative("second.m_Texture").objectReferenceValue;
                 bool doStrip = applyStruct.stripTextures.Contains(propName) && propTex != null;
-                if (doStrip || propTex == null)
+                // Drop orphaned serialized textures whose properties in the still-unlocked shader
+                // doesn't declare (most likely left behind from a shader swap). Drop it outright
+                // and do not save it for restore on unlock, since it doesn't belong to the shader
+                // at all.
+                bool isOrphan = REMOVE_ORPHANED_TEXTURES && !string.IsNullOrEmpty(propName) && !propName.StartsWith("unity_", StringComparison.Ordinal) && !material.HasProperty(propName);
+                if (doStrip || propTex == null || isOrphan)
                 {
                     if(doStrip)
                     {
