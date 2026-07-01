@@ -1695,7 +1695,7 @@ namespace Thry.ThryEditor
             Shader newShader = Shader.Find(newShaderName);
             if (newShader == null)
             {
-                ThryLogger.LogErr("Generated shader " + newShaderName + " could not be found");
+                ThryLogger.LogErr("Generated shader " + newShaderName + " could not be found. Did you delete the file?");
                 return false;
             }
             // Detour ApplyMaterialPropertyDrawers to prevent it from running, for performance reasons
@@ -1714,8 +1714,8 @@ namespace Thry.ThryEditor
             var propertiesToCopy = animatedPropsToRename.Union(animatedPropsToDuplicate);
             foreach (var animProp in propertiesToCopy)
             {
-                if(!CopyProperty(material, animProp.Prop, $"{animProp.Prop.name}_{animPropertySuffix}"))
-                    throw new ArgumentOutOfRangeException(nameof(material), "This property type should not be renamed and can not be set.");
+                if (!CopyProperty(material, animProp.Prop, $"{animProp.Prop.name}_{animPropertySuffix}"))
+                    throw new ArgumentOutOfRangeException(nameof(material), "This property type should not be renamed and cannot be set. What are you doing?");
             }
 
             return true;
@@ -1795,7 +1795,7 @@ namespace Thry.ThryEditor
                     {
                         if (currentExcludeDepth == 0)
                         {
-                            ThryLogger.LogErr("[Shader Optimizer] Number of 'endex' statements does not match number of 'ifex' statements."
+                            ThryLogger.LogErr("Number of 'endex' statements does not match number of 'ifex' statements."
                                 + $"\nError found in file '{filePath}' line {i+1}");
                         }
                         else
@@ -2731,8 +2731,8 @@ namespace Thry.ThryEditor
             // Check for original shader by guessing name
             bool guessed = GuessShader(material.shader, out originalShader);
             if (log) ThryLogger.LogWarn($"[Shader Optimizer] Original shader for material ({material.name}) was not found.\n" +
-                        (guessed ? $"Guessed shader name from current shader ({material.shader.name}) to be \"{originalShader.name}\"."
-                        : $"Guessing shader name from current shader ({material.shader.name}) failed."));
+                (guessed ? $"Guessed shader name from current shader ({material.shader.name}) to be \"{originalShader.name}\"."
+                : $"Guessing shader name from current shader ({material.shader.name}) failed."));
 
             return originalShader;
         }
@@ -2763,7 +2763,7 @@ namespace Thry.ThryEditor
         {
             IEnumerable<Material> materials = Resources.FindObjectsOfTypeAll<Material>();
             UpgradeAnimatedPropertiesToTags(materials);
-            ThryLogger.Log("Update animated properties of all materials to tags.");
+            ThryLogger.Log("Updated animated properties of all materials to tags.");
         }
 
         public static void UpgradeAnimatedPropertiesToTags(IEnumerable<Material> iMaterials)
@@ -3048,7 +3048,7 @@ namespace Thry.ThryEditor
                         ThryLogger.LogErr($"Unlocked shader, {shaderName}, found in\n" + string.Join("\n", entries.OrderBy(e => e)));
                     }
 
-                    ThryLogger.LogErr($"Unlocked shaders were found and removed from the build. Materials will be pink. Please open the Console for instructions and traceback details.\n" + "Try using Thry -> Materials -> Lock All on hierarchy items to ensure all materials are locked. Some materials may get overlooked if you are doing material swap animations!\n" + "If this happens again, please take a full screenshot of the Console with the traceback messages printed above and report the issue via GitHub or Discord!");
+                    ThryLogger.LogErr($"Unlocked shaders were found and removed from the build. Materials will be pink. Please open the Console for instructions and traceback details.\n" + "Try using Thry -> Materials -> Lock All on hierarchy items to ensure all materials are locked. Some materials may get overlooked if you are doing material swap animations!\n" + "If this happens again, please take a full screenshot of the Console with the traceback messages printed here and report the issue via GitHub or Discord!");
 
                     SessionState.SetBool(DidStripUnlockedShadersSessionStateKey, false);
                 }
