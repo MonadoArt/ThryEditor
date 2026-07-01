@@ -885,161 +885,181 @@ namespace Thry.ThryEditor
             s_applyStructsLater.Clear();
             s_shaderPropertyCombinations.Clear();
             
-            //first the shaders are created. compiling is suppressed with start asset editing
+            // First the shaders are created. compiling is suppressed with start asset editing.
+            // Guard the whole operation by keyword-fixing or linking throws, if setup. Then
+            // finally release asset editing so the AssetDatabase can't get wedged in edit
+            // mode (which can freeze import until restart).
+            bool assetEditingActive = false;
             AssetDatabase.StartAssetEditing();
-
-            bool isLocking = lockState == 1;
-
-            // Get cleaned material list
-            Material[] materialsToChangeLock = materials.Where(m => m != null)
-                .Select(m => m.GetRoot()) // Material variants can't have their shader changed
-                .Where(m => !string.IsNullOrEmpty(AssetDatabase.GetAssetPath(m))
-                    && m.IsLocked() != isLocking // only select materials that are being changed
-                    && (!isLocking || !m.shader.IsBroken() && IsShaderUsingThryOptimizer(m.shader))) // select materials with compatible shaders for locking
-                .Distinct().ToArray();
-
-            // Make sure keywords are set correctly for materials to be locked. If unlocking, do this after the shaders are unlocked
-            if (isLocking && Config.Instance.fixKeywordsWhenLocking)
-                ShaderEditor.FixKeywords(materialsToChangeLock);
-
-            float i = 0;
-            float length = materialsToChangeLock.Length;
-
-            //show popup dialog if defined
-            if (showDialog && length > 0)
+            assetEditingActive = true;
+            try
             {
-                if(EditorUtility.DisplayDialog("Locking Materials", EditorLocale.editor.Get("auto_lock_dialog").ReplaceVariables(length), "More information","OK"))
+                bool isLocking = lockState == 1;
+
+                // Get cleaned material list
+                Material[] materialsToChangeLock = materials.Where(m => m != null)
+                    .Select(m => m.GetRoot()) // Material variants can't have their shader changed
+                    .Where(m => !string.IsNullOrEmpty(AssetDatabase.GetAssetPath(m))
+                        && m.IsLocked() != isLocking // only select materials that are being changed
+                        && (!isLocking || !m.shader.IsBroken() && IsShaderUsingThryOptimizer(m.shader))) // select materials with compatible shaders for locking
+                    .Distinct().ToArray();
+
+                // Make sure keywords are set correctly for materials to be locked. If unlocking, do this after the shaders are unlocked
+                if (isLocking && Config.Instance.fixKeywordsWhenLocking)
+                    ShaderEditor.FixKeywords(materialsToChangeLock);
+
+                float i = 0;
+                float length = materialsToChangeLock.Length;
+
+                //show popup dialog if defined
+                if (showDialog && length > 0)
                 {
-                    Application.OpenURL("https://www.youtube.com/watch?v=asWeDJb5LAo");
+                    if(EditorUtility.DisplayDialog("Locking Materials", EditorLocale.editor.Get("auto_lock_dialog").ReplaceVariables(length), "More information","OK"))
+                    {
+                        Application.OpenURL("https://www.youtube.com/watch?v=asWeDJb5LAo");
+                    }
+                    PersistentData.Set("ShowLockInDialog", false);
                 }
-                PersistentData.Set("ShowLockInDialog", false);
-            }
 
-            Object[] prevTargets = Selection.objects;
-            if (ShaderEditor.Active != null)
-            {
-                Selection.objects = new Object[0];
-            }
-
-            //Create shader assets
-            foreach (Material m in materialsToChangeLock)
-            {
-                //do progress bar
-                if (showProgressbar)
+                Object[] prevTargets = Selection.objects;
+                if (ShaderEditor.Active != null)
                 {
-                    if (allowCancel)
-                    {
-                        if (EditorUtility.DisplayCancelableProgressBar(isLocking ? "Locking Materials" : "Unlocking Materials", m.name, i / length)) break;
-                    }
-                    else
-                    {
-                        EditorUtility.DisplayProgressBar(isLocking ? "Locking Materials" : "Unlocking Materials", m.name, i / length);
-                    }
+                    Selection.objects = new Object[0];
                 }
-                //create the assets
-                try
-                {
-                    if (isLocking)
-                    {
-                        string hash = MaterialToShaderPropertyHash(m);
-                        // Check that shader has already been created for this hash and still exists
-                        // Or that the shader is being created for this has during this session
-                        Material reference = null;
-                        if (s_shaderPropertyCombinations.ContainsKey(hash))
-                        {
-                            s_shaderPropertyCombinations[hash].RemoveAll(m2 => m2 == null);
-                            reference = s_shaderPropertyCombinations[hash].FirstOrDefault(m2 => m2 != m && (materialsToChangeLock.Contains(m2) || Shader.Find(s_applyStructsLater[m2].newShaderName) != null));
-                        }
-                        if (reference != null)
-                        {
-                            // Reuse existing shader and struct
-                            ApplyStruct applyStruct = s_applyStructsLater[reference];
-                            applyStruct.material = m;
-                            s_applyStructsLater[m] = applyStruct;
-                            //Disable shader keywords
-                            foreach (string keyword in m.shaderKeywords)
-                                if (m.IsKeywordEnabled(keyword)) m.DisableKeyword(keyword);
 
-                        }
-                        // Create new locked shader
-                        else
-                        {
-                            Lock(m,
-                                MaterialEditor.GetMaterialProperties(new Object[] { m }),
-                                applyShaderLater: true);
-                            s_shaderPropertyCombinations[hash] = new List<Material>();
-                        }
-                        // Add material to list of materials with same shader property hash
-                        s_shaderPropertyCombinations[hash].Add(m);
-                        // Update TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER of all materials with same shader property hash
-                        string tag = string.Join(",", s_shaderPropertyCombinations[hash].Select(m2 => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(m2))));
-                        foreach (Material m2 in s_shaderPropertyCombinations[hash])
-                            m2.SetOverrideTag(TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, tag);
-                    }
-                    else if (!isLocking)
-                    {
-                        Unlock(m, shaderOptimizerProp);
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.Log(e);
-                    string position = e.StackTrace.Split('\n').FirstOrDefault(l => l.Contains("ThryEditor"));
-                    if (position != null)
-                    {
-                        position = position.Split(new string[] { "ThryEditor" }, StringSplitOptions.None).LastOrDefault();
-                        ThryLogger.LogErr("Could not un-/lock material " + m.name + " | Error thrown at " + position + "\n" + e.StackTrace);
-                    }
-                    else
-                    {
-                        ThryLogger.LogErr("Could not un-/lock material " + m.name + "\n" + e.StackTrace);
-                    }
-                    EditorUtility.ClearProgressBar();
-                    AssetDatabase.StopAssetEditing();
-                    return false;
-                }
-                i++;
-            }
-
-            EditorUtility.ClearProgressBar();
-
-            // In case any keywords were messed up in the material following unlock, fix them now
-            if (!isLocking && Config.Instance.fixKeywordsWhenLocking)
-                ShaderEditor.FixKeywords(materialsToChangeLock);
-
-            if (!isLocking)
-            {
-                foreach (Material m in materialsToChangeLock) GlobalLinker.ApplyAllLinksToMaterial(m);
-            }
-            
-            AssetDatabase.StopAssetEditing();
-            //unity now compiles all the shaders
-
-            //now all new shaders are applied. this has to happen after unity compiled the shaders
-            if (isLocking)
-            {
-                AssetDatabase.Refresh();
-                //Apply new shaders
+                //Create shader assets
                 foreach (Material m in materialsToChangeLock)
                 {
-                    if (ShaderOptimizer.LockApplyShader(m))
+                    //do progress bar
+                    if (showProgressbar)
                     {
-                        m.SetNumber(GetOptimizerPropertyName(m.shader), 1);
+                        if (allowCancel)
+                        {
+                            if (EditorUtility.DisplayCancelableProgressBar(isLocking ? "Locking Materials" : "Unlocking Materials", m.name, i / length)) break;
+                        }
+                        else
+                        {
+                            EditorUtility.DisplayProgressBar(isLocking ? "Locking Materials" : "Unlocking Materials", m.name, i / length);
+                        }
+                    }
+                    //create the assets
+                    try
+                    {
+                        if (isLocking)
+                        {
+                            string hash = MaterialToShaderPropertyHash(m);
+                            // Check that shader has already been created for this hash and still exists
+                            // Or that the shader is being created for this has during this session
+                            Material reference = null;
+                            if (s_shaderPropertyCombinations.ContainsKey(hash))
+                            {
+                                s_shaderPropertyCombinations[hash].RemoveAll(m2 => m2 == null);
+                                reference = s_shaderPropertyCombinations[hash].FirstOrDefault(m2 => m2 != m && (materialsToChangeLock.Contains(m2) || Shader.Find(s_applyStructsLater[m2].newShaderName) != null));
+                            }
+                            if (reference != null)
+                            {
+                                // Reuse existing shader and struct
+                                ApplyStruct applyStruct = s_applyStructsLater[reference];
+                                applyStruct.material = m;
+                                s_applyStructsLater[m] = applyStruct;
+                                //Disable shader keywords
+                                foreach (string keyword in m.shaderKeywords)
+                                    if (m.IsKeywordEnabled(keyword)) m.DisableKeyword(keyword);
+
+                            }
+                            // Create new locked shader
+                            else
+                            {
+                                Lock(m,
+                                    MaterialEditor.GetMaterialProperties(new Object[] { m }),
+                                    applyShaderLater: true);
+                                s_shaderPropertyCombinations[hash] = new List<Material>();
+                            }
+                            // Add material to list of materials with same shader property hash
+                            s_shaderPropertyCombinations[hash].Add(m);
+                            // Update TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER of all materials with same shader property hash
+                            string tag = string.Join(",", s_shaderPropertyCombinations[hash].Select(m2 => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(m2))));
+                            foreach (Material m2 in s_shaderPropertyCombinations[hash])
+                                m2.SetOverrideTag(TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, tag);
+                        }
+                        else if (!isLocking)
+                        {
+                            Unlock(m, shaderOptimizerProp);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.Log(e);
+                        string position = e.StackTrace.Split('\n').FirstOrDefault(l => l.Contains("ThryEditor"));
+                        if (position != null)
+                        {
+                            position = position.Split(new string[] { "ThryEditor" }, StringSplitOptions.None).LastOrDefault();
+                            ThryLogger.LogErr("Could not un-/lock material " + m.name + " | Error thrown at " + position + "\n" + e.StackTrace);
+                        }
+                        else
+                        {
+                            ThryLogger.LogErr("Could not un-/lock material " + m.name + "\n" + e.StackTrace);
+                        }
+                        EditorUtility.ClearProgressBar();
+                        AssetDatabase.StopAssetEditing();
+                        assetEditingActive = false;
+                        return false;
+                    }
+                    i++;
+                }
+
+                EditorUtility.ClearProgressBar();
+
+                // In case any keywords were messed up in the material following unlock, fix them now
+                if (!isLocking && Config.Instance.fixKeywordsWhenLocking)
+                    ShaderEditor.FixKeywords(materialsToChangeLock);
+
+                if (!isLocking)
+                {
+                    foreach (Material m in materialsToChangeLock) GlobalLinker.ApplyAllLinksToMaterial(m);
+                }
+                
+                AssetDatabase.StopAssetEditing();
+                assetEditingActive = false;
+                //unity now compiles all the shaders
+
+                //now all new shaders are applied. this has to happen after unity compiled the shaders
+                if (isLocking)
+                {
+                    AssetDatabase.Refresh();
+                    //Apply new shaders
+                    foreach (Material m in materialsToChangeLock)
+                    {
+                        if (ShaderOptimizer.LockApplyShader(m))
+                        {
+                            m.SetNumber(GetOptimizerPropertyName(m.shader), 1);
+                        }
                     }
                 }
+                AssetDatabase.Refresh();
+
+                // Make sure things get saved after a cycle. This prevents thumbnails from getting stuck
+                if(Config.Instance.saveAfterLockUnlock)
+                    EditorApplication.update += QueueSaveAfterLockUnlock;
+
+                if (ShaderEditor.Active != null)
+                {
+                    Selection.objects = prevTargets;
+                }
+
+                return true;
             }
-            AssetDatabase.Refresh();
-
-            // Make sure things get saved after a cycle. This prevents thumbnails from getting stuck
-            if(Config.Instance.saveAfterLockUnlock)
-                EditorApplication.update += QueueSaveAfterLockUnlock;
-
-            if (ShaderEditor.Active != null)
+            finally
             {
-                Selection.objects = prevTargets;
+                // If we bail before the mid-method StopAssetEditing, release it and clear the progress bar
+                // so that the Editor doesn't stay wedged.
+                if (assetEditingActive)
+                {
+                    AssetDatabase.StopAssetEditing();
+                    assetEditingActive = false;
+                }
+                EditorUtility.ClearProgressBar();
             }
-
-            return true;
         }
 
         // This is just a wrapper so that it waits a cycle before saving
@@ -1109,6 +1129,12 @@ namespace Thry.ThryEditor
 
                             stringBuilder.Append(m.GetTextureOffset(propName).ToString());
                             stringBuilder.Append(m.GetTextureScale(propName).ToString());
+
+                            // Include texel size since the Optimizer bakes _<Tex>_TexelSize in as a
+                            // constant. Therefore, two materials with different-resolution textures
+                            // must NOT share a locked shader even when their scale/offset match.
+                            // Otherwise, all but the first get a wrong baked texel size.
+                            stringBuilder.Append(texelSize.ToString());
                             break;
                     }
                 }
@@ -1546,9 +1572,7 @@ namespace Thry.ThryEditor
                 (new FileInfo(newShaderDirectory + fileName)).Directory.Create();
                 try
                 {
-                    StreamWriter sw = new StreamWriter(newShaderDirectory + fileName);
-                    sw.Write(output);
-                    sw.Close();
+                    using (StreamWriter sw = new StreamWriter(newShaderDirectory + fileName)) sw.Write(output);
                     AssetDatabase.ImportAsset(newShaderDirectory + fileName);
                 }
                 catch (IOException e)
@@ -1714,9 +1738,7 @@ namespace Thry.ThryEditor
             string fileContents = null;
             try
             {
-                StreamReader sr = new StreamReader(filePath);
-                fileContents = sr.ReadToEnd();
-                sr.Close();
+                using (StreamReader sr = new StreamReader(filePath)) fileContents = sr.ReadToEnd();
             }
             catch (FileNotFoundException e)
             {
@@ -1790,6 +1812,11 @@ namespace Thry.ThryEditor
                         do
                         {
                             i++;
+                            if (i >= fileLines.Length)
+                            {
+                                ThryLogger.LogErr($"'//KSOEvaluateMacro' ran past the end of file '{filePath}' - unterminated macro line continuation ('\\').");
+                                break;
+                            }
                             lineTrimmed = fileLines[i].TrimEnd();
                             if (lineTrimmed.EndsWith("\\", StringComparison.Ordinal))
                                 macro += lineTrimmed.TrimEnd('\\') + Environment.NewLine; // keep new lines in macro to make output more readable
@@ -2027,9 +2054,7 @@ namespace Thry.ThryEditor
             string fileContents = null;
             try
             {
-                StreamReader sr = new StreamReader(filePath);
-                fileContents = sr.ReadToEnd();
-                sr.Close();
+                using (StreamReader sr = new StreamReader(filePath)) fileContents = sr.ReadToEnd();
             }
             catch (FileNotFoundException e)
             {
@@ -2756,22 +2781,23 @@ namespace Thry.ThryEditor
                 }
 
                 string path = AssetDatabase.GetAssetPath(m);
-                StreamReader reader = new StreamReader(path);
-                string line;
-                while((line = reader.ReadLine()) != null)
+                using (StreamReader reader = new StreamReader(path))
                 {
-                    if (line.Contains(AnimatedPropertySuffix) && line.Length > 6)
+                    string line;
+                    while((line = reader.ReadLine()) != null)
                     {
-                        string[] parts = line.Substring(6, line.Length - 6).Split(':');
-                        float f;
-                        if (float.TryParse(parts[1], out f) && f != 0)
+                        if (line.Contains(AnimatedPropertySuffix) && line.Length > 6)
                         {
-                            string name = parts[0].Substring(0, parts[0].Length - AnimatedPropertySuffix.Length);
-                            m.SetOverrideTag(name + AnimatedTagSuffix, "" + f);
+                            string[] parts = line.Substring(6, line.Length - 6).Split(':');
+                            float f;
+                            if (float.TryParse(parts[1], out f) && f != 0)
+                            {
+                                string name = parts[0].Substring(0, parts[0].Length - AnimatedPropertySuffix.Length);
+                                m.SetOverrideTag(name + AnimatedTagSuffix, "" + f);
+                            }
                         }
                     }
                 }
-                reader.Close();
                 i++;
             }
 
