@@ -1,0 +1,110 @@
+name: Build VCC Package Release
+
+# To Deploy a release, do so via Git via command with a semantic version:
+# > git tag x.y.z
+# AND
+# > git push origin x.y.z
+#
+# EXAMPLE:
+# > git tag 2.71.4
+# THEN
+# > git push origin 2.71.4
+#
+# Pushing a tag will always trigger the deployment.
+#
+# The tag will write the package.json AND Config.cs with the version number
+# (tag) specified. MAKE SURE it's a newer version than the current one!
+# It will then commit that back to master, re-point the tag as the stamped
+# commit, then publish a GitHub Release.
+#
+# To automate deployment, please add a VPM_LISTING_DISPATCH_TOKEN as a secret
+# with no expiration so that poiyomi/vpm listing can be refreshed with each
+# deployment.
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+        - name: Checkout master
+          uses: actions/checkout@v4
+          with:
+            ref: master
+            fetch-depth: 0
+        
+        - name: Derive Version from Tag
+          run: |
+            set -euo pipefail
+            VERSION="${GITHUB_REF_NAME#v}"
+            # Accept X.Y.Z optionally followed by a -prerelease and/or +build suffix.
+            if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)*$'; then
+              echo "::error::Tag '$GITHUB_REF_NAME' does not look like a valid version (expected X.Y.Z)."
+              exit 1
+            fi
+            PACKAGE_NAME="$(jq -r '.name' package.json)"
+            {
+              echo "VERSION=$VERSION"
+              echo "PACKAGE_NAME=$PACKAGE_NAME"
+              echo "ZIP_NAME=$ZIP_NAME"
+            } >> "$GITHUB_ENV"
+            echo "Releasing $PACKAGE_NAME version $VERSION -> $ZIP_NAME"
+        
+        - name: Stamp Version into package.json and Config.cs
+          run: |
+            set -euo pipefail
+            sed -i -E 's/("version"[[:space:]]*:[[:space:]]*")[^"]*(")/\1'"$VERSION"'\2/' package.json
+            sed -i -E 's/(INSTALLED_VERSION[[:space:]]*=[[:space:]]*")[^"]*(")/\1'"$VERSION"'\2/' Editor/Config.cs
+            echo "package.json -> $(grep '"version"' package.json)"
+            echo "Config.cs    -> $(grep 'INSTALLED_VERSION' Editor/Config.cs | head -n1)"
+            # Fail loudly if either stamp did not take.
+            grep -q "\"version\": \"$VERSION\"" package.json
+            grep -q "INSTALLED_VERSION = \"$VERSION\"" Editor/Config.cs
+        
+        # Commit the stamped files to master and move the tag to the new commit.
+        # Pushes made with the built-in GITHUB_TOKEN do NOT trigger a new workflow run,
+        # so force-moving the tag here will not re-fire this workflow (no loop guard needed).
+        - name: Commit Stamped Files and re-point Tag
+          run: |
+            set -euo pipefail
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package.json Editor/Config.cs
+            if git diff --cached --quiet; then
+              echo "No version changes to commit (already stamped)."
+            else
+              git commit -m "Release $VERSION"
+              git push origin master
+              git tag -f "$GITHUB_REF_NAME"
+              git push -f origin "refs/tags/$GITHUB_REF_NAME"
+            fi
+        
+        # package.json sits at the repo root, so zipping "." puts it at the zip root (VCC requirement).
+        - name: Build VPM Package Zip
+          run: |
+            set -euo pipefail
+            zip -r "$ZIP_NAME" . -x '.git/*' -x '.github/*' -x '.claude/*' -x '*.zip'
+            echo "Built $ZIP_NAME"
+        
+        - name: Create GitHub Release
+          uses: softprops/action-gh-release@v2
+          with:
+            tag_name: ${{ github.ref_name }}
+            name: ${{ github.ref_name }}
+            generate_release_notes: true
+            files: |
+              ${{ env.ZIP_NAME }}
+              package.json
+        
+        - name: Dispatch to VPM Listing
+          uses: peter-evans/repository-dispatch@v3
+          with:
+            token: ${{ secrets.VPM_LISTING_DISPATCH_TOKEN }}
+            repository: poiyomi/vpm
+            event-type: rebuild-listing
