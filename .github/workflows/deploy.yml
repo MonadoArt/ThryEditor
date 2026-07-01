@@ -49,6 +49,7 @@ jobs:
               exit 1
             fi
             PACKAGE_NAME="$(jq -r '.name' package.json)"
+            ZIP_NAME="${PACKAGE_NAME}-${VERSION}.zip"
             {
               echo "VERSION=$VERSION"
               echo "PACKAGE_NAME=$PACKAGE_NAME"
