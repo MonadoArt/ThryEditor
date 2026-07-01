@@ -988,11 +988,11 @@ namespace Thry.ThryEditor
                     if (position != null)
                     {
                         position = position.Split(new string[] { "ThryEditor" }, StringSplitOptions.None).LastOrDefault();
-                        Debug.LogError("Could not un-/lock material " + m.name + " | Error thrown at " + position + "\n" + e.StackTrace);
+                        ThryLogger.LogErr("Could not un-/lock material " + m.name + " | Error thrown at " + position + "\n" + e.StackTrace);
                     }
                     else
                     {
-                        Debug.LogError("Could not un-/lock material " + m.name + "\n" + e.StackTrace);
+                        ThryLogger.LogErr("Could not un-/lock material " + m.name + "\n" + e.StackTrace);
                     }
                     EditorUtility.ClearProgressBar();
                     AssetDatabase.StopAssetEditing();
@@ -1126,7 +1126,7 @@ namespace Thry.ThryEditor
             RenderPipeline pipeline = GetActiveRenderPipeline();
             if (pipeline == RenderPipeline.Other)
             {
-                Debug.LogError("Locking is not supported for this render pipeline. Please use the built-in pipeline or URP.");
+                ThryLogger.LogErr("Locking is not supported for this render pipeline. Please use the built-in pipeline or URP.");
                 return false;
             }
             // File filepaths and names
@@ -1553,7 +1553,7 @@ namespace Thry.ThryEditor
                 }
                 catch (IOException e)
                 {
-                    Debug.LogError("[Shader Optimizer] Processed shader file " + newShaderDirectory + fileName + " could not be written.  " + e.ToString());
+                    ThryLogger.LogErr("Processed shader file " + newShaderDirectory + fileName + " could not be written.  " + e.ToString());
                     return false;
                 }
             }
@@ -1671,7 +1671,7 @@ namespace Thry.ThryEditor
             Shader newShader = Shader.Find(newShaderName);
             if (newShader == null)
             {
-                Debug.LogError("[Shader Optimizer] Generated shader " + newShaderName + " could not be found");
+                ThryLogger.LogErr("Generated shader " + newShaderName + " could not be found");
                 return false;
             }
             // Detour ApplyMaterialPropertyDrawers to prevent it from running, for performance reasons
@@ -1720,12 +1720,12 @@ namespace Thry.ThryEditor
             }
             catch (FileNotFoundException e)
             {
-                Debug.LogError("[Shader Optimizer] Shader file " + filePath + " not found.  " + e.ToString());
+                ThryLogger.LogErr("Shader file " + filePath + " not found.  " + e.ToString());
                 return false;
             }
             catch (IOException e)
             {
-                Debug.LogError("[Shader Optimizer] Error reading shader file.  " + e.ToString());
+                ThryLogger.LogErr("Error reading shader file.  " + e.ToString());
                 return false;
             }
 
@@ -1773,8 +1773,8 @@ namespace Thry.ThryEditor
                     {
                         if (currentExcludeDepth == 0)
                         {
-                            Debug.LogError("[Shader Optimizer] Number of 'endex' statements does not match number of 'ifex' statements."
-                                +$"\nError found in file '{filePath}' line {i+1}");
+                            ThryLogger.LogErr("[Shader Optimizer] Number of 'endex' statements does not match number of 'ifex' statements."
+                                + $"\nError found in file '{filePath}' line {i+1}");
                         }
                         else
                         {
@@ -1892,8 +1892,8 @@ namespace Thry.ThryEditor
                     {
                         if (removeEndifStack.Count == 0)
                         {
-                            Debug.LogError("[Shader Optimizer] Number of 'endif' statements does not match number of 'if' statements."
-                                +$"\nError found in file '{filePath}' line {i+1}. Current output copied to clipboard.");
+                            ThryLogger.LogErr("Number of 'endif' statements does not match number of 'if' statements."
+                                + $"\nError found in file '{filePath}' line {i+1}. Current output copied to clipboard.");
                             GUIUtility.systemCopyBuffer = string.Join(Environment.NewLine, includedLines);
                         }
                         if (isIncluded && removeEndifStack.Peek()) isIncluded = false;
@@ -1907,9 +1907,9 @@ namespace Thry.ThryEditor
                         // For debugging
                         if (removeEndifStack.Count == 0)
                         {
-                            Debug.LogError("[Shader Optimizer] Number of 'endif' statements does not match number of 'if' statements."
-                                +$"\nError found in file '{filePath}' line {i+1}. Current output copied to clipboard.");
-                            Debug.LogError(removeEndifStackDebugging.ToString());
+                            ThryLogger.LogErr("Number of 'endif' statements does not match number of 'if' statements."
+                                + $"\nError found in file '{filePath}' line {i+1}. Current output copied to clipboard.");
+                            ThryLogger.LogErr(removeEndifStackDebugging.ToString());
                             GUIUtility.systemCopyBuffer = string.Join(Environment.NewLine, includedLines);
                         }
 #if DEBUG_IF_DEF_REMOVAL
@@ -2033,12 +2033,12 @@ namespace Thry.ThryEditor
             }
             catch (FileNotFoundException e)
             {
-                Debug.LogError("[Shader Optimizer] Include file " + filePath + " not found. " + e.ToString());
+                ThryLogger.LogErr("Include file " + filePath + " not found. " + e.ToString());
                 return null;
             }
             catch (IOException e)
             {
-                Debug.LogError("[Shader Optimizer] Error reading include file. " + e.ToString());
+                ThryLogger.LogErr("Error reading include file. " + e.ToString());
                 return null;
             }
 
@@ -2520,15 +2520,15 @@ namespace Thry.ThryEditor
             // Check if shader is locked
             if (!brokenLockedShader && !lockedShader.IsLocked())
             {
-                Debug.LogWarning("[Shader Optimizer] Shader " + lockedShader.name + " is not locked.");
+                ThryLogger.LogWarn("Shader " + lockedShader.name + " is not locked.");
                 return UnlockSuccess.wasNotLocked;
             }
 
             Shader originalShader = GetOriginalShader(material);
             if (originalShader.IsBroken())
             {
-                Debug.LogError("[Shader Optimizer] Original shader not saved to material, could not unlock shader");
-                if(EditorUtility.DisplayDialog("Unlock Material", $"The original shader for {material.name} could not be resolved.\nPlease select a shader manually.", "Ok")) {}
+                ThryLogger.LogErr("Original shader not saved to material, could not unlock shader");
+                if (EditorUtility.DisplayDialog("Unlock Material", $"The original shader for {material.name} could not be resolved.\nPlease select a shader manually.", "Ok")) {}
                 return UnlockSuccess.hasNoSavedShader;
             }
 
@@ -2583,7 +2583,7 @@ namespace Thry.ThryEditor
                 string propName = prop.name.Substring(0, prop.name.Length - animPropertySuffix.Length);
                 if (!material.HasProperty(propName))
                 {
-                    Debug.LogError($"The expected property ({propName}) for renamed property \"{prop.name}\" was not found on the unlocked shader ({originalShader.name}).");
+                    ThryLogger.LogErr($"The expected property ({propName}) for renamed property \"{prop.name}\" was not found on the unlocked shader ({originalShader.name}).");
 
                     continue;
                 }
@@ -2644,13 +2644,13 @@ namespace Thry.ThryEditor
             string originalShaderName = material.GetTag(TAG_ORIGINAL_SHADER, false, string.Empty);
             if (string.IsNullOrEmpty(originalShaderName))
             {
-                if (log) Debug.LogWarning($"[Shader Optimizer] Original shader name not saved to material ({material.name}).");
+                if (log) ThryLogger.LogWarn($"Original shader name not saved to material ({material.name}).");
 
                 return null;
             }
 
             Shader originalShader = Shader.Find(originalShaderName);
-            if (log) Debug.LogWarning($"[Shader Optimizer] Original shader name \"{originalShaderName}\" could not be found for material \"{material.name}\".");
+            if (originalShader == null && log) ThryLogger.LogWarn($"Original shader name \"{originalShaderName}\" could not be found for material \"{material.name}\".");
 
             return originalShader;
         }
@@ -2660,7 +2660,7 @@ namespace Thry.ThryEditor
             string originalShaderGUID = material.GetTag(TAG_ORIGINAL_SHADER_GUID, false, string.Empty);
             if (string.IsNullOrEmpty(originalShaderGUID))
             {
-                if (log) Debug.LogWarning($"[Shader Optimizer] Original shader GUID not saved to material ({material.name}).");
+                if (log) ThryLogger.LogWarn($"Original shader GUID not saved to material ({material.name}).");
 
                 return null;
             }
@@ -2672,7 +2672,7 @@ namespace Thry.ThryEditor
                 originalShader = AssetDatabase.LoadAssetAtPath<Shader>(originalShaderPath);
 
             if (originalShader == null && log)
-                Debug.LogWarning($"[Shader Optimizer] Original shader GUID {originalShaderGUID} could not be found for material \"{material.name}\".");
+                ThryLogger.LogWarn($"Original shader GUID {originalShaderGUID} could not be found for material \"{material.name}\".");
 
             return originalShader;
         }
@@ -2698,14 +2698,14 @@ namespace Thry.ThryEditor
             // Nothing to go by.
             if (material.shader.IsBroken())
             {
-                if (log) Debug.LogWarning($"[Shader Optimizer] Original shader for material ({material.name}) was not found and the current shader is missing.");
+                if (log) ThryLogger.LogWarn($"Original shader for material ({material.name}) was not found and the current shader is missing.");
 
                 return null;
             }
 
             // Check for original shader by guessing name
             bool guessed = GuessShader(material.shader, out originalShader);
-            if (log) Debug.LogWarning($"[Shader Optimizer] Original shader for material ({material.name}) was not found.\n" +
+            if (log) ThryLogger.LogWarn($"[Shader Optimizer] Original shader for material ({material.name}) was not found.\n" +
                         (guessed ? $"Guessed shader name from current shader ({material.shader.name}) to be \"{originalShader.name}\"."
                         : $"Guessing shader name from current shader ({material.shader.name}) failed."));
 
@@ -2738,7 +2738,7 @@ namespace Thry.ThryEditor
         {
             IEnumerable<Material> materials = Resources.FindObjectsOfTypeAll<Material>();
             UpgradeAnimatedPropertiesToTags(materials);
-            Debug.Log("[Thry][Optimizer] Update animated properties of all materials to tags.");
+            ThryLogger.Log("Update animated properties of all materials to tags.");
         }
 
         public static void UpgradeAnimatedPropertiesToTags(IEnumerable<Material> iMaterials)
@@ -3019,10 +3019,10 @@ namespace Thry.ThryEditor
 
                         if (entries == null || entries.Count == 0) continue;
 
-                        Debug.LogError($"[Shader Optimizer] Unlocked shader, {shaderName}, found in\n" + string.Join("\n", entries.OrderBy(e => e)));
+                        ThryLogger.LogErr($"Unlocked shader, {shaderName}, found in\n" + string.Join("\n", entries.OrderBy(e => e)));
                     }
 
-                    Debug.LogError($"[Shader Optimizer] Unlocked shaders were found and removed from the build. Materials will be pink. Please open the Console for instructions and traceback details.\n" + "Try using Thry -> Materials -> Lock All on hierarchy items to ensure all materials are locked. Some materials may get overlooked if you are doing material swap animations!\n" + "If this happens again, please take a full screenshot of the Console with the traceback messages printed above and report the issue via GitHub or Discord!");
+                    ThryLogger.LogErr($"Unlocked shaders were found and removed from the build. Materials will be pink. Please open the Console for instructions and traceback details.\n" + "Try using Thry -> Materials -> Lock All on hierarchy items to ensure all materials are locked. Some materials may get overlooked if you are doing material swap animations!\n" + "If this happens again, please take a full screenshot of the Console with the traceback messages printed above and report the issue via GitHub or Discord!");
 
                     SessionState.SetBool(DidStripUnlockedShadersSessionStateKey, false);
                 }
