@@ -18,8 +18,7 @@ name: Build VCC Package Release
 # commit, then publish a GitHub Release.
 #
 # To automate deployment, use the VPM_REPO_TOKEN secret so that poiyomi/vpm
-# listing can be refreshed with each
-# deployment.
+# listing can be refreshed with each deployment.
 
 on:
   push:
