@@ -17,8 +17,8 @@ name: Build VCC Package Release
 # It will then commit that back to master, re-point the tag as the stamped
 # commit, then publish a GitHub Release.
 #
-# To automate deployment, please add a VPM_LISTING_DISPATCH_TOKEN as a secret
-# with no expiration so that poiyomi/vpm listing can be refreshed with each
+# To automate deployment, use the VPM_REPO_TOKEN secret so that poiyomi/vpm
+# listing can be refreshed with each
 # deployment.
 
 on:
@@ -106,6 +106,6 @@ jobs:
         - name: Dispatch to VPM Listing
           uses: peter-evans/repository-dispatch@v3
           with:
-            token: ${{ secrets.VPM_LISTING_DISPATCH_TOKEN }}
+            token: ${{ secrets.VPM_REPO_TOKEN }}
             repository: poiyomi/vpm
             event-type: rebuild-listing
