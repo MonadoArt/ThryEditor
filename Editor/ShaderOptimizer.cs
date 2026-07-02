@@ -877,6 +877,18 @@ namespace Thry.ThryEditor
         }
 
         private static Dictionary<string, List<Material>> s_shaderPropertyCombinations = new Dictionary<string, List<Material>>();
+        private static readonly List<Material> s_materialsToVerifyLock = new List<Material>();
+
+        // Presets use ConsumeLockUnlockMaterialChange to suppress it's per-material logging
+        // for these expected re-imports. Entries are consumed on observation.
+        private static readonly HashSet<string> s_materialsChangedByLockUnlock = new HashSet<string>();
+        // Returns true and consumes the entry if the given Material's re-import was triggered
+        // by a Lock/Unlock rather than a user-driven change. Suppresses redundant logging.
+        public static bool ConsumeLockUnlockMaterialChange(string guid)
+        {
+            return !string.IsNullOrEmpty(guid) && s_materialsChangedByLockUnlock.Remove(guid);
+        }
+        
         private static bool SetLockedForAllMaterialsInternal(IEnumerable<Material> materials, int lockState, bool showProgressbar = false, bool showDialog = false, bool allowCancel = true, MaterialProperty shaderOptimizerProp = null)
         {
             Helper.RegisterEditorUse();
@@ -884,6 +896,7 @@ namespace Thry.ThryEditor
             // Clear stale state from previous operations
             s_applyStructsLater.Clear();
             s_shaderPropertyCombinations.Clear();
+            s_materialsToVerifyLock.Clear();
             
             // First the shaders are created. compiling is suppressed with start asset editing.
             // Guard the whole operation by keyword-fixing or linking throws, if setup. Then
@@ -903,6 +916,11 @@ namespace Thry.ThryEditor
                         && m.IsLocked() != isLocking // only select materials that are being changed
                         && (!isLocking || !m.shader.IsBroken() && IsShaderUsingThryOptimizer(m.shader))) // select materials with compatible shaders for locking
                     .Distinct().ToArray();
+                
+                foreach (Material m in materialsToChangeLock)
+                {
+                    s_materialsChangedByLockUnlock.Add(AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(m)));
+                }
 
                 // Make sure keywords are set correctly for materials to be locked. If unlocking, do this after the shaders are unlocked
                 if (isLocking && Config.Instance.fixKeywordsWhenLocking)
@@ -916,7 +934,7 @@ namespace Thry.ThryEditor
                 {
                     if(EditorUtility.DisplayDialog("Locking Materials", EditorLocale.editor.Get("auto_lock_dialog").ReplaceVariables(length), "More information","OK"))
                     {
-                        Application.OpenURL("https://www.youtube.com/watch?v=asWeDJb5LAo");
+                        Application.OpenURL("https://www.poiyomi.com/general/locking#shader-locking");
                     }
                     PersistentData.Set("ShowLockInDialog", false);
                 }
@@ -984,7 +1002,7 @@ namespace Thry.ThryEditor
                         }
                         else if (!isLocking)
                         {
-                            Unlock(m, shaderOptimizerProp);
+                            if (Unlock(m, shaderOptimizerProp) == UnlockSuccess.success) ThryLogger.LogDetail($"Successfully unlocked material \"{m.name}\".");
                         }
                     }
                     catch (Exception e)
@@ -1033,8 +1051,10 @@ namespace Thry.ThryEditor
                         if (ShaderOptimizer.LockApplyShader(m))
                         {
                             m.SetNumber(GetOptimizerPropertyName(m.shader), 1);
+                            s_materialsToVerifyLock.Add(m);
                         }
                     }
+                    if (s_materialsToVerifyLock.Count > 0) EditorApplication.update += VerifyLockedShaders;
                 }
                 AssetDatabase.Refresh();
 
@@ -1076,6 +1096,20 @@ namespace Thry.ThryEditor
 
             EditorApplication.update -= SaveAfterLockUnlock;
             AssetDatabase.SaveAssets();
+        }
+
+        static void VerifyLockedShaders()
+        {
+            if (ShaderUtil.anythingCompiling) return;
+
+            EditorApplication.update -= VerifyLockedShaders;
+
+            foreach (Material m in s_materialsToVerifyLock)
+            {
+                if (m == null || m.shader == null) continue;
+                if (ShaderUtil.ShaderHasError(m.shader)) ThryLogger.LogErr($"Locked material \"{m.name}\" produced a compilation error! Refer to the Console to see what areas need to be checked. If this was thrown on an official release, please report a bug!");
+                else ThryLogger.LogDetail($"Successfully locked material \"{m.name}\".");
+            }
         }
 
         static string MaterialToShaderPropertyHash(Material m)
@@ -2489,9 +2523,8 @@ namespace Thry.ThryEditor
 #endregion
 
 #region Unlocking
-        public enum UnlockSuccess { hasNoSavedShader, wasNotLocked, couldNotFindOriginalShader, couldNotDeleteLockedShader,
-            success}
-        private static void Unlock(Material material, MaterialProperty shaderOptimizer = null)
+        public enum UnlockSuccess { hasNoSavedShader, wasNotLocked, couldNotFindOriginalShader, couldNotDeleteLockedShader, success}
+        private static UnlockSuccess Unlock(Material material, MaterialProperty shaderOptimizer = null)
         {
             //if unlock success set floats. not done for locking cause the sucess is checked later when applying the shaders
             UnlockSuccess success = UnlockConcrete(material);
@@ -2501,6 +2534,7 @@ namespace Thry.ThryEditor
                 if (shaderOptimizer != null) shaderOptimizer.floatValue = 0;
                 else material.SetNumber(GetOptimizerPropertyName(material.shader), 0);
             }
+            return success;
         }
 
         public static bool GuessShader(Shader locked, out Shader shader)

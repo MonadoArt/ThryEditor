@@ -333,7 +333,10 @@ namespace Thry.ThryEditor
                 foreach (string asset in importedAssets.Where(a => a.EndsWith(".mat")))
                 {
                     Material material = AssetDatabase.LoadAssetAtPath<Material>(asset);
-                    ThryLogger.LogDetail($"Material Changed: {material.name} ({AssetDatabase.AssetPathToGUID(asset)})");
+                    string guid = AssetDatabase.AssetPathToGUID(asset);
+                    // Skip the log for re-imports triggered by the ShaderOptimizer. Those aren't
+                    // user-driven material changes and would otherwise fire for every materials.
+                    if (!ShaderOptimizer.ConsumeLockUnlockMaterialChange(guid)) ThryLogger.LogDetail($"Material Changed: {material.name} ({AssetDatabase.AssetPathToGUID(asset)})");
                     // Check if asset is preset
                     if (IsPreset(material))
                     {
