@@ -75,8 +75,12 @@ namespace Thry.ThryEditor.Drawers
 
             for (int i = 0; i < curve.length; i++)
             {
-                AnimationUtility.SetKeyLeftTangentMode(curve, i, AnimationUtility.TangentMode.ClampedAuto);
-                AnimationUtility.SetKeyRightTangentMode(curve, i, AnimationUtility.TangentMode.ClampedAuto);
+                AnimationUtility.TangentMode tangentMode = i == 0 || i == curve.length - 1
+                    ? AnimationUtility.TangentMode.Auto
+                    : AnimationUtility.TangentMode.ClampedAuto;
+
+                AnimationUtility.SetKeyLeftTangentMode(curve, i, tangentMode);
+                AnimationUtility.SetKeyRightTangentMode(curve, i, tangentMode);
             }
 
             return curve;
