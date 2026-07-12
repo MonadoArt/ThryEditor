@@ -8,16 +8,14 @@ namespace Thry.ThryEditor.Drawers
     // Usage in shader:
     // [Curve4] _MyFourFloatCurve ("My Curve (4 samples)", Vector) = (1,1,1,1)
     // This drawer shows a CurveField and bakes 4 evenly spaced samples (0, 1/3, 2/3, 1)
-    // into the Vector4 material property. Runtime code can evaluate with piecewise-linear.
+    // into the Vector4 material property. Runtime code samples with smooth cubic.
     public class Curve4Drawer : MaterialPropertyDrawer
     {
-        private AnimationCurve _curve = new AnimationCurve(
-            new Keyframe(0f, 1f),
-            new Keyframe(1f, 1f)
-        );
+        private AnimationCurve _curve = new AnimationCurve();
 
         // Guard to re-sync the curve from the underlying vector when first drawn
         private bool _initializedFromProperty = false;
+        private Vector4 _lastPropertyValue;
 
         public override void OnGUI(Rect position, MaterialProperty prop, GUIContent label, MaterialEditor editor)
         {
@@ -27,35 +25,16 @@ namespace Thry.ThryEditor.Drawers
                 return;
             }
 
-            // Initialize curve from the current Vector4 values once
-            if (!_initializedFromProperty)
+            Vector4 propertyValue = prop.vectorValue;
+            if (!_initializedFromProperty || propertyValue != _lastPropertyValue)
             {
-                Vector4 v = prop.vectorValue;
-                _curve = new AnimationCurve(
-                    new Keyframe(0f, v.x),
-                    new Keyframe(1f / 3f, v.y),
-                    new Keyframe(2f / 3f, v.z),
-                    new Keyframe(1f, v.w)
-                );
+                _curve = CreateCurveFromVector(propertyValue);
+                _lastPropertyValue = propertyValue;
                 _initializedFromProperty = true;
             }
 
-            // Draw label in the label area (left column)
-            Rect labelRect = new Rect(
-                position.x,
-                position.y,
-                EditorGUIUtility.labelWidth - GUILib.VALUE_FIELD_LABEL_OFFSET,
-                position.height
-            );
-            EditorGUI.LabelField(labelRect, label);
-
-            // Match Thry layout: draw within value area to avoid overlapping labels/columns
-            Rect valueRect = new Rect(
-                position.x + EditorGUIUtility.labelWidth - GUILib.VALUE_FIELD_LABEL_OFFSET,
-                position.y,
-                position.width - EditorGUIUtility.labelWidth + GUILib.VALUE_FIELD_LABEL_OFFSET - GUILib.GetSmallTextureVRAMWidth(prop),
-                position.height
-            );
+            Rect valueRect = EditorGUI.PrefixLabel(position, label);
+            valueRect.width = Mathf.Max(0f, valueRect.width - GUILib.GetSmallTextureVRAMWidth(prop));
 
             // Let Thry render the label; we only draw the field in the valueRect
             EditorGUI.BeginChangeCheck();
@@ -81,7 +60,26 @@ namespace Thry.ThryEditor.Drawers
             float s2 = Mathf.Clamp01(_curve.Evaluate(2f / 3f));
             float s3 = Mathf.Clamp01(_curve.Evaluate(1f));
 
-            prop.vectorValue = new Vector4(s0, s1, s2, s3);
+            _lastPropertyValue = new Vector4(s0, s1, s2, s3);
+            prop.vectorValue = _lastPropertyValue;
+        }
+
+        private static AnimationCurve CreateCurveFromVector(Vector4 value)
+        {
+            var curve = new AnimationCurve(
+                new Keyframe(0f, value.x),
+                new Keyframe(1f / 3f, value.y),
+                new Keyframe(2f / 3f, value.z),
+                new Keyframe(1f, value.w)
+            );
+
+            for (int i = 0; i < curve.length; i++)
+            {
+                AnimationUtility.SetKeyLeftTangentMode(curve, i, AnimationUtility.TangentMode.ClampedAuto);
+                AnimationUtility.SetKeyRightTangentMode(curve, i, AnimationUtility.TangentMode.ClampedAuto);
+            }
+
+            return curve;
         }
     }
 }
