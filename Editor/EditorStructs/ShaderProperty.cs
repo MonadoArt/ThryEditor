@@ -385,7 +385,9 @@ namespace Thry.ThryEditor
         {
             if(content == null)
                 content = GUIContent.none;
-            
+
+            _drawnAsLabellessInline = rect != null && string.IsNullOrEmpty(content.text);
+
             MyShaderUI.CurrentProperty = this;
             InitializeDrawers();
             PreDraw();
@@ -425,7 +427,10 @@ namespace Thry.ThryEditor
                 r.width = labelWidth;
                 float prevLabelW = EditorGUIUtility.labelWidth;
                 EditorGUIUtility.labelWidth = 0;
+
+                if (MyShaderUI.IsLockedMaterial) EditorGUI.EndDisabledGroup();
                 MyShaderUI.PropertyDictionary[Options.reference_property].Draw(r, new GUIContent());
+                if (MyShaderUI.IsLockedMaterial) EditorGUI.BeginDisabledGroup(false);
                 EditorGUIUtility.labelWidth = prevLabelW;
             }
             else if (_doForceIntoOneLine)

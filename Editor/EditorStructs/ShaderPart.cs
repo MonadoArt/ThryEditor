@@ -181,6 +181,9 @@ namespace Thry.ThryEditor
         public MaterialEditor MyMaterialEditor { protected set; get; } = null;
 
         protected bool has_not_searchedFor = false; //used for property search
+
+        // True when this property was drawn inline with an explicit rect and no label
+        protected bool _drawnAsLabellessInline = false;
         protected bool _doEditLocale = false;
 
         GenericMenu _contextMenu;
@@ -860,7 +863,8 @@ namespace Thry.ThryEditor
                     DrawingData.IconsPositioningHeights[0] = DrawingData.LastGuiObjectRect.y + labelYOffset + (labelLineHeight - 16) / 2f;
                 }
             }
-            DrawingData.TooltipCheckRect.width = EditorGUIUtility.labelWidth;
+            if (!_drawnAsLabellessInline)
+                DrawingData.TooltipCheckRect.width = EditorGUIUtility.labelWidth;
         }
 
         protected virtual float GetLabelYOffsetWithinRect() => 0f;

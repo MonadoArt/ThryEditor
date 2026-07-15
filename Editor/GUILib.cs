@@ -200,8 +200,11 @@ namespace Thry.ThryEditor
                 r.width -= EditorGUIUtility.labelWidth;
                 r.width -= vramPos.width;
                 foloutClickCheck.width -= r.width;
+
+                if (ShaderEditor.Active.IsLockedMaterial) EditorGUI.EndDisabledGroup();
                 property.Draw(r, new GUIContent());
                 property.Tooltip.ConditionalDraw(r);
+                if (ShaderEditor.Active.IsLockedMaterial) EditorGUI.BeginDisabledGroup(false);
             }
             //Foldouts
             if (hasFoldoutProperties && DrawingData.CurrentTextureProperty != null)
