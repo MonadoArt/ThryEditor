@@ -133,9 +133,9 @@ namespace Thry.ThryEditor.Drawers
             }
 
             Rect buttonRect = EditorGUI.IndentedRect(EditorGUILayout.GetControlRect());
-            buttonRect.width /= 3;
+            buttonRect.width /= 4;
             EditorGUI.BeginDisabledGroup(!_current._hasConfigChanged);
-            if (GUI.Button(buttonRect, "Confirm Merge")) Confirm();
+            if (GUI.Button(buttonRect, "Merge")) Confirm();
             buttonRect.x += buttonRect.width;
             EditorGUI.EndDisabledGroup();
             EditorGUI.BeginDisabledGroup(!_current._hasTextureChanged);
@@ -143,6 +143,13 @@ namespace Thry.ThryEditor.Drawers
             EditorGUI.EndDisabledGroup();
             buttonRect.x += buttonRect.width;
             if (GUI.Button(buttonRect, "Advanced")) OpenFullTexturePacker();
+            buttonRect.x += buttonRect.width;
+            bool hasAnythingToClear = _current._input_r.GetTexture() != null || _current._input_g.GetTexture() != null
+                || _current._input_b.GetTexture() != null || _current._input_a.GetTexture() != null
+                || _prop.textureValue != null;
+            EditorGUI.BeginDisabledGroup(!hasAnythingToClear);
+            if (GUI.Button(buttonRect, "Clear")) Clear();
+            EditorGUI.EndDisabledGroup();
         }
 
         bool TexturePackerSlotGUI(InlinePackerChannelConfig input, string label)
@@ -263,11 +270,10 @@ namespace Thry.ThryEditor.Drawers
             }
         }
 
-        InlinePackerChannelConfig LoadForChannel(Material m, string id, string channel)
+        // Default fallback based on the shader property's default texture
+        // "black" -> 0, "gray"/"grey" -> 0.5, everything else -> 1
+        string GetDefaultFallback(Material m, string id)
         {
-            InlinePackerChannelConfig packerChannelConfig = new InlinePackerChannelConfig();
-            // Default fallback based on the shader property's default texture
-            // "black" -> 0, "gray"/"grey" -> 0.5, everything else -> 1
             string defaultFallback = "1";
             int propIdx = m.shader.FindPropertyIndex(id);
             if (propIdx >= 0)
@@ -279,6 +285,13 @@ namespace Thry.ThryEditor.Drawers
                     else if (defTexName.Contains("gray") || defTexName.Contains("grey")) defaultFallback = "0.5";
                 }
             }
+            return defaultFallback;
+        }
+
+        InlinePackerChannelConfig LoadForChannel(Material m, string id, string channel)
+        {
+            InlinePackerChannelConfig packerChannelConfig = new InlinePackerChannelConfig();
+            string defaultFallback = GetDefaultFallback(m, id);
             packerChannelConfig.Fallback = Parser.ParseFloat(m.GetTag(id + "_texPack_" + channel + "_fallback", false, defaultFallback));
             packerChannelConfig.Invert = bool.Parse(m.GetTag(id + "_texPack_" + channel + "_inverted", false, "false"));
             packerChannelConfig.Channel = (TexturePacker.TextureChannelIn)int.Parse(m.GetTag(id + "_texPack_" + channel + "_channel", false, "4"));
@@ -461,6 +474,32 @@ namespace Thry.ThryEditor.Drawers
         void Revert()
         {
             _prop.textureValue = _current._previousTexture;
+            _current._hasTextureChanged = false;
+        }
+
+        void Clear()
+        {
+            foreach (Material m in ShaderEditor.Active.Materials)
+                Undo.RegisterCompleteObjectUndo(m, "Thry Packer Texture Change " + _prop.name);
+
+            float defaultFallback = Parser.ParseFloat(GetDefaultFallback(ShaderEditor.Active.Materials[0], _prop.name));
+            foreach (InlinePackerChannelConfig input in new[] { _current._input_r, _current._input_g, _current._input_b, _current._input_a })
+            {
+                input.Source.SetInputTexture(null);
+                input.Invert = false;
+                input.Channel = TextureChannelIn.Max;
+                input.Remapping = s_RemappingDefault;
+                input.Fallback = defaultFallback;
+            }
+
+            // Clear the packed texture from the material property.
+            _current._packedTexture = null;
+            _prop.textureValue = null;
+            _current._previousTexture = null;
+
+            Save();
+
+            _current._hasConfigChanged = false;
             _current._hasTextureChanged = false;
         }
 
