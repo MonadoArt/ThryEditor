@@ -69,7 +69,7 @@ namespace Thry.ThryEditor.Drawers
             if (EditorGUI.EndChangeCheck() && newMask != mask)
                 {
                     // Set GUI.changed to true, so it triggers a change event, even on reselection
-                    Debug.Log("new mask: " + newMask);
+                    // Debug.Log("new mask: " + newMask);
                     GUI.changed = true;
                     prop.SetNumber(newMask);
                 }
