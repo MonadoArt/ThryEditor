@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Thry.ThryEditor.Helpers;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -283,6 +284,8 @@ namespace Thry.ThryEditor.ShaderTranslations
             shaderEditor.SetShader(newShader, mat.shader);
 
             int renderQueue = mat.renderQueue;
+            // Like the Render Queue, the material's own override tags don't survive the shader assignment below.
+            var preservedTags = MaterialHelper.GetOwnOverrideTags(mat, MaterialHelper.TagsPreservedAcrossShaderSwap);
 
             // Variants can't have their shader changed and only store overridden properties in
             // m_SavedProperties, which the translator reads from. Flatten into a standalone material
@@ -291,6 +294,7 @@ namespace Thry.ThryEditor.ShaderTranslations
                 FlattenVariant(mat);
 
             mat.shader = newShader;
+            MaterialHelper.ApplyOverrideTags(mat, preservedTags);
             shaderEditor.FakePartialInitilizationForLocaleGathering(newShader);
             shaderEditor.Materials[0] = mat;
 

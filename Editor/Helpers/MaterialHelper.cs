@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -6,6 +8,71 @@ namespace Thry.ThryEditor.Helpers
 {
     public class MaterialHelper
     {
+        /// <summary>
+        /// Override tags that describe the material rather than the shader it happens to use, so they have to survive
+        /// a shader swap. Assigning a new shader can drop the material's own tag map (the render queue has the same
+        /// problem), which silently resets the VRC Fallback Shader the user picked when a material is upgraded to
+        /// a newer shader version.
+        /// </summary>
+        public static readonly string[] TagsPreservedAcrossShaderSwap = { "VRCFallback" };
+
+        /// <summary>
+        /// Reads the override tags the material itself stores, limited to "tagNames".
+        /// Material.GetTag falls through to the shader's SubShader tags when the material has no override of its own,
+        /// so the serialized tag map is used to tell "the material stores this" apart from "the shader provides this".
+        /// </summary>
+        public static Dictionary<string, string> GetOwnOverrideTags(Material material, params string[] tagNames)
+        {
+            Dictionary<string, string> tags = new Dictionary<string, string>();
+            if (material == null || tagNames == null || tagNames.Length == 0) return tags;
+
+            var it = new SerializedObject(material).GetIterator();
+            while (it.Next(true))
+            {
+                if (it.name != "stringTagMap") continue;
+
+                for (int i = 0; i < it.arraySize; i++)
+                {
+                    string tagName = it.GetArrayElementAtIndex(i).displayName;
+                    if (Array.IndexOf(tagNames, tagName) < 0) continue;
+
+                    // The material has an override tag for this tag, so GetTag returns that override and not a shader tag.
+                    tags[tagName] = material.GetTag(tagName, false, string.Empty);
+                }
+                break;
+            }
+            return tags;
+        }
+
+        /// <summary>
+        /// Re-applies tags gathered by "GetOwnOverrideTags". Re-applying an unchanged value is a no-op.
+        /// </summary>
+        public static void ApplyOverrideTags(Material material, Dictionary<string, string> tags)
+        {
+            if (material == null || tags == null) return;
+            foreach (KeyValuePair<string, string> tag in tags)
+            {
+                material.SetOverrideTag(tag.Key, tag.Value);
+            }
+        }
+
+        /// <summary>
+        /// Assigns a new shader to a material without losing the settings Unity resets on a shader swap: the render
+        /// queue and the material's own override tags (e.g. the VRC Fallback Shader). Use this instead of setting
+        /// material.shader directly when swapping shaders outside of the inspector, e.g. from an upgrade tool.
+        /// </summary>
+        public static void SwapShaderPreservingSettings(Material material, Shader newShader)
+        {
+            if (material == null || newShader == null) return;
+
+            int previousQueue = material.renderQueue;
+            Dictionary<string, string> previousTags = GetOwnOverrideTags(material, TagsPreservedAcrossShaderSwap);
+
+            material.shader = newShader;
+            material.renderQueue = previousQueue;
+            ApplyOverrideTags(material, previousTags);
+        }
+
         public static void ToggleKeyword(Material material, string keyword, bool turn_on)
         {
             bool is_on = material.IsKeywordEnabled(keyword);

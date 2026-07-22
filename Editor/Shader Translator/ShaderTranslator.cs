@@ -195,7 +195,12 @@ namespace Thry.ThryEditor.ShaderTranslations
                             case ShaderModificationAction.ActionType.ChangeTargetShader:
                                 Shader newShader = Shader.Find(action.targetValue);
                                 if(newShader)
-                                    _editor.Materials[0].shader = newShader;
+                                {
+                                    Material m = _editor.Materials[0];
+                                    var preservedTags = MaterialHelper.GetOwnOverrideTags(m, MaterialHelper.TagsPreservedAcrossShaderSwap);
+                                    m.shader = newShader;
+                                    MaterialHelper.ApplyOverrideTags(m, preservedTags);
+                                }
                                 break;
                             case ShaderModificationAction.ActionType.SetTargetPropertyValue:
                                 if(float.TryParse(action.targetValue, out float parsedFloat))

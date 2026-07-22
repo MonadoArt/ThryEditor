@@ -680,8 +680,11 @@ namespace Thry
             //This seems to be some deeper process that cant be disabled so i just set it again after the swap
             //Even material.shader = newShader resets the queue. (this is actually the only thing the base function does)
             int previousQueue = material.renderQueue;
+            //Do the same for the material's own override tags. Otherwise, the VRC Fallback Shader selection is lost.
+            Dictionary<string, string> previousTags = MaterialHelper.GetOwnOverrideTags(material, MaterialHelper.TagsPreservedAcrossShaderSwap);
             base.AssignNewShaderToMaterial(material, oldShader, newShader);
             material.renderQueue = previousQueue;
+            MaterialHelper.ApplyOverrideTags(material, previousTags);
             SuggestedTranslationDefinition = ShaderTranslator.CheckForExistingTranslationFile(oldShader, newShader);
             FixKeywords(new Material[] { material });
             _doReloadNextDraw = true;

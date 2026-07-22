@@ -1692,8 +1692,10 @@ namespace Thry.ThryEditor
 
             // For some reason when shaders are swapped on a material the RenderType override tag gets completely deleted and render queue set back to -1
             // So these are saved as temp values and reassigned after switching shaders
+            // The same happens to the material's own VRCFallback override, so that is carried over too.
             string renderType = material.GetTag("RenderType", false, "");
             int renderQueue = material.renderQueue;
+            Dictionary<string, string> preservedTags = MaterialHelper.GetOwnOverrideTags(material, MaterialHelper.TagsPreservedAcrossShaderSwap);
 
             // Strip removed textures
             SerializedObject serializedObject = new SerializedObject(material);
@@ -1738,6 +1740,7 @@ namespace Thry.ThryEditor
             RestoreApplyMaterialPropertyDrawers();
             material.SetOverrideTag("RenderType", renderType);
             material.renderQueue = renderQueue;
+            MaterialHelper.ApplyOverrideTags(material, preservedTags);
 
 
             material.SetOverrideTag("OriginalKeywords", string.Join(" ", material.shaderKeywords));
@@ -2612,8 +2615,10 @@ namespace Thry.ThryEditor
 
             // For some reason when shaders are swapped on a material the RenderType override tag gets completely deleted and render queue set back to -1
             // So these are saved as temp values and reassigned after switching shaders
+            // The same happens to the material's own VRCFallback override, so that is carried over too.
             string renderType = material.GetTag("RenderType", false, "");
             int renderQueue = material.renderQueue;
+            Dictionary<string, string> preservedTags = MaterialHelper.GetOwnOverrideTags(material, MaterialHelper.TagsPreservedAcrossShaderSwap);
             string unlockedMaterialGUID = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(material));
             DetourApplyMaterialPropertyDrawers();
             if (ShaderEditor.Active != null) ShaderEditor.Active.SetShader(originalShader);
@@ -2621,6 +2626,7 @@ namespace Thry.ThryEditor
             RestoreApplyMaterialPropertyDrawers();
             material.SetOverrideTag("RenderType", renderType);
             material.renderQueue = renderQueue;
+            MaterialHelper.ApplyOverrideTags(material, preservedTags);
             material.shaderKeywords = material.GetTag("OriginalKeywords", false, string.Join(" ", material.shaderKeywords)).Split(' ');
 
             // Restore stripped textures
