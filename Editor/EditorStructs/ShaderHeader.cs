@@ -51,7 +51,7 @@ namespace Thry.ThryEditor
             if (EditorGUI.EndChangeCheck())
             {
                 UpdateLinkedMaterials();
-                GlobalLinker.OnSectionChanged(this);
+                GlobalLinker.OnSectionChanged(this, reloadUI: false);
             }
             DrawingData.LastGuiObjectHeaderRect = headerRect;
             DrawingData.LastGuiObjectRect = headerRect;

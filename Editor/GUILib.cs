@@ -213,7 +213,11 @@ namespace Thry.ThryEditor
                 Rect trianglePos = new Rect(position);
                 trianglePos.x = position.x - 3;
                 //This is an invisible button with zero functionality. But it needs to be here so that the triangle click reacts fast
+                //Ensure it does not leak a GUI change and only toggles as a UI-only foldout and GUI.Button sets GUI.changed on click.
+                //Enclosing change checks would otherwise read it as a property edit.
+                bool changedBeforeFoldoutHitbox = GUI.changed;
                 if (GUI.Button(trianglePos, "", GUIStyle.none)) { }
+                GUI.changed = changedBeforeFoldoutHitbox;
                 if (Event.current.type == EventType.Repaint)
                     EditorStyles.foldout.Draw(trianglePos, false, false, DrawingData.CurrentTextureProperty.showFoldoutProperties, false);
 

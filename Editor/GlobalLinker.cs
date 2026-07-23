@@ -241,7 +241,11 @@ namespace Thry.ThryEditor
             Save();
         }
 
-        public static void OnSectionChanged(ShaderGroup section)
+        /// <param name="reloadUI">
+        /// Leave true for one-off actions (paste, reset, presets) that replace the inspected material's values wholesale.
+        /// Pass false from per-frame draw hooks: a reload there discards runtime-only UI state such as expanded texture foldouts.
+        /// </param>
+        public static void OnSectionChanged(ShaderGroup section, bool reloadUI = true)
         {
             if (ShaderEditor.Active == null) return;
             if (ShaderEditor.Active.IsInAnimationMode) return;
@@ -252,7 +256,9 @@ namespace Thry.ThryEditor
             GlobalLink link = GetLinkForMaterial(self, sectionPropName);
             if (link == null) return;
 
-            CapturePropertiesFromSection(link, section);
+            // Change checks fire for UI-only interactions too (foldouts, focus changes). Bail before
+            // writing to disk or recording undos when no value in the section actually moved.
+            if (!CapturePropertiesFromSection(link, section)) return;
             Save();
 
             string selfGuid = UnityHelper.GetGUID(self);
@@ -263,7 +269,20 @@ namespace Thry.ThryEditor
                 Material target = AssetDatabase.LoadAssetAtPath<Material>(path);
                 if (target != null) ApplyLinkToMaterial(link, target, recordUndo: true);
             }
-            RequestRepaint();
+            RequestRepaint(reloadUI);
+        }
+
+        /// <summary>
+        /// Propagates an edit made to a single property outside the draw loop's change check - a context menu
+        /// reset, for example - to whichever globally linked section contains it. No-op if no ancestor is linked.
+        /// </summary>
+        public static void OnPropertyChanged(ShaderPart part)
+        {
+            if (part == null) return;
+            for (ShaderPart ancestor = part.Parent; ancestor != null; ancestor = ancestor.Parent)
+            {
+                if (ancestor is ShaderGroup group && group.MaterialProperty != null) OnSectionChanged(group);
+            }
         }
 
         public static void OverwriteLinkFromSection(GlobalLink link, ShaderGroup section)
@@ -378,11 +397,56 @@ namespace Thry.ThryEditor
             return changed;
         }
 
-        private static void CapturePropertiesFromSection(GlobalLink link, ShaderGroup section)
+        /// <summary>
+        /// Recaptures the section into the link. Returns true if any captured value differs from what the link already held.
+        /// </summary>
+        private static bool CapturePropertiesFromSection(GlobalLink link, ShaderGroup section)
         {
             List<GlobalLinkPropertyValue> captured = new List<GlobalLinkPropertyValue>();
             CaptureRecursive(captured, section);
+            bool changed = !IsSamePropertySet(link.properties, captured);
             link.properties = captured.ToArray();
+            return changed;
+        }
+
+        private static bool IsSamePropertySet(GlobalLinkPropertyValue[] stored, List<GlobalLinkPropertyValue> captured)
+        {
+            if (stored == null) return captured.Count == 0;
+            if (stored.Length != captured.Count) return false;
+            for (int i = 0; i < stored.Length; i++)
+            {
+                if (!IsSameProperty(stored[i], captured[i])) return false;
+            }
+            return true;
+        }
+
+        private static bool IsSameProperty(GlobalLinkPropertyValue a, GlobalLinkPropertyValue b)
+        {
+            if (a == null || b == null) return a == b;
+            if (a.name != b.name || a.type != b.type) return false;
+
+            switch (a.type)
+            {
+                case "Float": return a.floatValue == b.floatValue;
+                case "Int": return a.intValue == b.intValue;
+                case "Color": return IsSameFloatArray(a.colorValue, b.colorValue);
+                case "Vector": return IsSameFloatArray(a.vectorValue, b.vectorValue);
+                case "Texture":
+                    return (a.textureGuid ?? "") == (b.textureGuid ?? "")
+                        && IsSameFloatArray(a.textureScaleAndOffset, b.textureScaleAndOffset);
+            }
+            return true;
+        }
+
+        private static bool IsSameFloatArray(float[] a, float[] b)
+        {
+            if (a == null || b == null) return a == b;
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
         }
 
         private static void CaptureRecursive(List<GlobalLinkPropertyValue> captured, ShaderGroup group)
@@ -500,9 +564,15 @@ namespace Thry.ThryEditor
             MaterialEditor.ApplyMaterialPropertyDrawers(material);
         }
 
-        private static void RequestRepaint()
+        /// <param name="reloadUI">
+        /// Rebuilds the whole ShaderEditor UI. Needed when the inspected material's own values were replaced from
+        /// outside the UI, but it resets runtime-only state (expanded texture foldouts, drawer caches), so skip it
+        /// when only other subscribers were written to.
+        /// </param>
+        private static void RequestRepaint(bool reloadUI = true)
         {
-            ShaderEditor.ReloadActive();
+            if (reloadUI) ShaderEditor.ReloadActive();
+            else ShaderEditor.RepaintActive();
             SceneView.RepaintAll();
         }
 

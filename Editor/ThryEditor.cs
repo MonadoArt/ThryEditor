@@ -62,6 +62,7 @@ namespace Thry
         private bool _doReloadNextDraw = false;
         private bool _didSwapToShader = false;
         private bool _didRegisterCallbacks = false;
+        private bool _doApplyRenderingPresetAfterSwap = false;
 
         //EditorData
         public bool DoUseShaderOptimizer;
@@ -554,6 +555,14 @@ namespace Thry
                 ShaderUtil.allowAsyncCompilation = true;
             }
 
+            // The new shader's properties exist now, so its rendering preset can be applied - a preset value only
+            // means something once the shader that declares it is the one collected.
+            if (_doApplyRenderingPresetAfterSwap)
+            {
+                _doApplyRenderingPresetAfterSwap = false;
+                RenderingPresets.ApplyAfterSwap(this, Materials);
+            }
+
             _isFirstOnGUICall = false;
         }
 
@@ -620,6 +629,8 @@ namespace Thry
             base.OnClosed(material);
             UnregisterCallbacks();
             _isFirstOnGUICall = true;
+            // A swap that never got drawn is not applied to whatever material this editor is reused for
+            _doApplyRenderingPresetAfterSwap = false;
         }
 
         #if UNITY_2021_2_OR_NEWER
@@ -672,6 +683,11 @@ namespace Thry
                 if (!proceed)
                     return;
             }
+
+            // Park the outgoing shader's rendering preset while its properties are still the live ones. The incoming
+            // shader's preset is applied once its properties have been collected, at the end of InitlizeThryUI.
+            RenderingPresets.Park(this, material, oldShader);
+            _doApplyRenderingPresetAfterSwap = true;
             
             this.ShaderOptimizerProperty = null;
             this.LocaleProperty = null;

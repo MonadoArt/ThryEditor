@@ -1134,8 +1134,10 @@ namespace Thry.ThryEditor
             }
             
             RaisePropertyValueChanged();
+            // Context menu callbacks run outside the section's change check, so the linker has to be told directly.
+            GlobalLinker.OnPropertyChanged(this);
         }
-        
+
         static void ResetSingleProperty(ShaderPart shaderPart)
         {
             MaterialProperty prop = shaderPart.MaterialProperty;
