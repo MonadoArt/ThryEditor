@@ -386,7 +386,7 @@ namespace Thry.ThryEditor
             if(content == null)
                 content = GUIContent.none;
 
-            _drawnAsLabellessInline = rect != null && string.IsNullOrEmpty(content.text);
+            _drawnAsLabellessInline = rect != null && string.IsNullOrEmpty(content.text) && !isInHeader;
 
             MyShaderUI.CurrentProperty = this;
             InitializeDrawers();
