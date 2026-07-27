@@ -143,10 +143,13 @@ namespace Thry.ThryEditor
                     string[] lines = File.ReadAllLines(_filepath);
                     foreach (string line in lines)
                     {
+                        if (string.IsNullOrWhiteSpace(line)) continue;
                         _guids.Add(line);
                     }
                 }
             }
+
+            public int Count => _guids.Count;
 
             public bool Contains(string guid)
             {
@@ -156,20 +159,28 @@ namespace Thry.ThryEditor
             public void SetCollection(IEnumerable<string> guids)
             {
                 _guids.Clear();
-                _guids.UnionWith(guids);
+                _guids.UnionWith(guids.Where(g => !string.IsNullOrEmpty(g)));
                 _isDirty = true;
             }
 
+            // Only flags the list dirty when the guid was actually new. Otherwise every material
+            // re-import (locking, saving, a preset being edited) rewrites the whole file even
+            // though nothing changed.
             public void Add(string guid)
             {
-                _guids.Add(guid);
-                _isDirty = true;
+                if (string.IsNullOrEmpty(guid)) return;
+                if (_guids.Add(guid)) _isDirty = true;
             }
 
+            public void AddAll(IEnumerable<string> guids)
+            {
+                foreach (string guid in guids) Add(guid);
+            }
+
+            // Legacy name, kept so external callers don't break.
             public void AllAll(IEnumerable<string> guids)
             {
-                _guids.UnionWith(guids);
-                _isDirty = true;
+                AddAll(guids);
             }
 
             public void Save()
@@ -271,28 +282,88 @@ namespace Thry.ThryEditor
             // Create cache
             // Find all materials
             string[] guids = AssetDatabase.FindAssets("t:material");
-            for(int guid = 0; guid < guids.Length; guid++)
-            {
-                EditorUtility.DisplayProgressBar("Creating Preset Cache", $"Loading material {guid + 1}/{guids.Length}", (float)guid / guids.Length);
-                // Load material
-                Material material = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guids[guid]));
-                // Check if material is preset
-                if (IsPreset(material))
-                {
-                    // Add to list
-                    AddPreset(material);
-                }
-            }
+            IndexPresets(guids, "Creating Preset Cache", alwaysShowProgress: true);
 
             KnownMaterials.SetCollection(guids);
             KnownMaterials.Save();
-            
-            EditorUtility.ClearProgressBar();
+        }
+
+        // Only plain .mat assets can be presets. Materials living inside .fbx/.asset containers
+        // share their container's guid, which the cache has no way to address individually, so
+        // they are never candidates.
+        static bool IsMaterialAssetPath(string path)
+        {
+            return !string.IsNullOrEmpty(path) && path.EndsWith(".mat", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Loads the given material assets and folds any presets among them into the cache.
+        // Shared by the full rebuild and the incremental catch-up, so both stay consistent.
+        static void IndexPresets(IList<string> guids, string progressTitle, bool alwaysShowProgress = false)
+        {
+            // No-op once built, but external callers can reach this before anything else touched
+            // the caches. (Re-entrant from CreatePresetCache, which runs after the fields are set.)
+            InitializeDataStructures();
+
+            List<string> paths = new List<string>();
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (IsMaterialAssetPath(path)) paths.Add(path);
+            }
+
+            // A handful of materials shouldn't flash a progress bar across the editor.
+            bool showProgress = alwaysShowProgress || paths.Count > 25;
+            try
+            {
+                using (new BatchedCacheSave())
+                {
+                    for (int i = 0; i < paths.Count; i++)
+                    {
+                        if (showProgress)
+                            EditorUtility.DisplayProgressBar(progressTitle, $"Loading material {i + 1}/{paths.Count}", (float)i / paths.Count);
+                        Material material = AssetDatabase.LoadAssetAtPath<Material>(paths[i]);
+                        if (material != null && IsPreset(material)) AddPreset(material);
+                    }
+                }
+            }
+            finally
+            {
+                if (showProgress) EditorUtility.ClearProgressBar();
+            }
         }
 
         public static void RebuildCache()
         {
             CreatePresetCache();
+        }
+
+        /// <summary>
+        /// Registers material assets created by external tooling (build pipelines, avatar
+        /// processors, generators) with the preset cache. Without this the cache sees them as
+        /// unfamiliar on the next domain reload and has to index them itself. Cheap and safe to
+        /// call repeatedly - guids that are already known are ignored.
+        /// </summary>
+        public static void RegisterMaterials(IEnumerable<string> guids)
+        {
+            if (guids == null) return;
+
+            List<string> unknown = null;
+            foreach (string guid in guids)
+            {
+                if (string.IsNullOrEmpty(guid) || KnownMaterials.Contains(guid)) continue;
+                if (unknown == null) unknown = new List<string>();
+                unknown.Add(guid);
+            }
+            if (unknown == null) return;
+
+            IndexPresets(unknown, "Indexing Materials");
+            KnownMaterials.AddAll(unknown);
+            KnownMaterials.Save();
+        }
+
+        public static void RegisterMaterial(string guid)
+        {
+            RegisterMaterials(new[] { guid });
         }
 
         static Dictionary<Shader, List<string>> s_headersInShader = new Dictionary<Shader, List<string>>();
@@ -306,7 +377,38 @@ namespace Thry.ThryEditor
             return props.Where(p => p.StartsWith("m_", StringComparison.Ordinal)).ToList();
         }
 
+        static int s_saveSuppressionDepth = 0;
+        static bool s_saveRequested = false;
+
+        // Add/RemovePreset each write the whole cache file. Wrapping a bulk operation in this
+        // collapses those writes into a single one at the end.
+        class BatchedCacheSave : IDisposable
+        {
+            public BatchedCacheSave()
+            {
+                s_saveSuppressionDepth++;
+            }
+
+            public void Dispose()
+            {
+                if (--s_saveSuppressionDepth > 0) return;
+                if (!s_saveRequested) return;
+                s_saveRequested = false;
+                SaveNow();
+            }
+        }
+
         static void Save()
+        {
+            if (s_saveSuppressionDepth > 0)
+            {
+                s_saveRequested = true;
+                return;
+            }
+            SaveNow();
+        }
+
+        static void SaveNow()
         {
             // Save cache
             FileHelper.CreateFileWithDirectories(FILE_NAME_CACHE);
@@ -327,42 +429,48 @@ namespace Thry.ThryEditor
         // On Asset Delete remove presets from cache
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
-            if(importedAssets.Length > 0)
+            // Batched so an import touching many materials writes the cache file once instead of
+            // twice per preset.
+            using (new BatchedCacheSave())
             {
-                // Check if any presets were imported, iterate over all imported materials
-                foreach (string asset in importedAssets.Where(a => a.EndsWith(".mat")))
+                if(importedAssets.Length > 0)
                 {
-                    Material material = AssetDatabase.LoadAssetAtPath<Material>(asset);
-                    string guid = AssetDatabase.AssetPathToGUID(asset);
-                    // Skip the log for re-imports triggered by the ShaderOptimizer. Those aren't
-                    // user-driven material changes and would otherwise fire for every materials.
-                    if (!ShaderOptimizer.ConsumeLockUnlockMaterialChange(guid)) ThryLogger.LogDetail($"Material Changed: {material.name} ({AssetDatabase.AssetPathToGUID(asset)})");
-                    // Check if asset is preset
-                    if (IsPreset(material))
+                    // Check if any presets were imported, iterate over all imported materials
+                    foreach (string asset in importedAssets.Where(IsMaterialAssetPath))
                     {
-                        // Add preset
-                        RemovePreset(material);
-                        AddPreset(material);
+                        Material material = AssetDatabase.LoadAssetAtPath<Material>(asset);
+                        if (material == null) continue;
+                        string guid = AssetDatabase.AssetPathToGUID(asset);
+                        // Skip the log for re-imports triggered by the ShaderOptimizer. Those aren't
+                        // user-driven material changes and would otherwise fire for every materials.
+                        if (!ShaderOptimizer.ConsumeLockUnlockMaterialChange(guid)) ThryLogger.LogDetail($"Material Changed: {material.name} ({guid})");
+                        // Check if asset is preset
+                        if (IsPreset(material))
+                        {
+                            // Add preset
+                            RemovePreset(material);
+                            AddPreset(material);
+                        }
+                        KnownMaterials.Add(guid);
                     }
-                    KnownMaterials.Add(AssetDatabase.AssetPathToGUID(asset));
                 }
-            }
 
-            if(deletedAssets.Length > 0)
-            { 
-                // go through all preset collections
-                Dictionary<string, string> pathsToGuids = PresetCollections.
-                    SelectMany(c => c.Value.Guids).Distinct(). // Guids of all preset materials. Because of sectioned can exists multiples
-                    Select(g => (AssetDatabase.GUIDToAssetPath(g), g)). // Tuple of path and guid
-                    ToDictionary(k => k.Item1, v => v.Item2);
-                // Check if any presets were deleted, iterate over all deleted materials
-                foreach (string asset in deletedAssets.Where(a => a.EndsWith(".mat")))
+                if(deletedAssets.Length > 0)
                 {
-                    // Check if asset is preset
-                    if (pathsToGuids.ContainsKey(asset))
+                    // go through all preset collections
+                    Dictionary<string, string> pathsToGuids = PresetCollections.
+                        SelectMany(c => c.Value.Guids).Distinct(). // Guids of all preset materials. Because of sectioned can exists multiples
+                        Select(g => (AssetDatabase.GUIDToAssetPath(g), g)). // Tuple of path and guid
+                        ToDictionary(k => k.Item1, v => v.Item2);
+                    // Check if any presets were deleted, iterate over all deleted materials
+                    foreach (string asset in deletedAssets.Where(IsMaterialAssetPath))
                     {
-                        // Remove preset
-                        RemovePreset(pathsToGuids[asset]);
+                        // Check if asset is preset
+                        if (pathsToGuids.ContainsKey(asset))
+                        {
+                            // Remove preset
+                            RemovePreset(pathsToGuids[asset]);
+                        }
                     }
                 }
             }
@@ -442,7 +550,9 @@ namespace Thry.ThryEditor
         }
 
         public static Material GetPresetMaterial(string guid)
-        {   
+        {
+            // Validation no longer runs during domain reload, so the caches may not be built yet.
+            InitializeDataStructures();
             if (s_materalCache.ContainsKey(guid))
             {
                 return s_materalCache[guid];
@@ -827,32 +937,57 @@ namespace Thry.ThryEditor
 
 #region Preset Validation
 
-        /* This is a check for if the preset cache is invalid & should be rebuild from scratch */
-        [InitializeOnLoadMethod]
-        static void CheckPresetCache()
-        {
-            // Check if any chached presets do not exist anymore
-            InitializeDataStructures();
-            bool cacheInvalid = PresetCollections.Values.Any(c => c.Paths.Any(p => string.IsNullOrWhiteSpace(p)));
+        /* Keeps the cache in step with the project without ever throwing it away.
 
-            // check if any material is not known
-            if(!cacheInvalid)
+           Materials routinely appear without ThryEditor seeing an import event for them: they
+           arrive through version control while Unity is closed, they sit inside .fbx/.asset
+           containers, or a build pipeline writes them mid-session. This check used to react to a
+           single unfamiliar material by discarding the entire cache and re-loading every material
+           in the project, so any tool that generates materials (VRCFury, avatar build pipelines,
+           texture packers) forced a full preset rebuild on every domain reload.
+
+           Instead, look only at what actually changed: index the materials we haven't seen before
+           and drop entries for the ones that are gone. Everything already in the cache stays. */
+        [InitializeOnLoadMethod]
+        static void ScheduleCacheValidation()
+        {
+            // A headless build has no use for the preset list, and scanning would only cost import
+            // time on CI.
+            if (Application.isBatchMode) return;
+            // Deferred so the scan stays off the domain reload path and runs once the AssetDatabase
+            // has settled.
+            EditorApplication.delayCall += ValidatePresetCache;
+        }
+
+        static void ValidatePresetCache()
+        {
+            InitializeDataStructures();
+
+            string[] currentMaterials = AssetDatabase.FindAssets("t:material");
+            List<string> unknown = currentMaterials.Where(g => !KnownMaterials.Contains(g)).ToList();
+
+            if (unknown.Count > 0)
             {
-                string[] guids = AssetDatabase.FindAssets("t:material");
-                foreach(string guid in guids)
-                {
-                    if(!KnownMaterials.Contains(guid))
-                    {
-                        cacheInvalid = true;
-                        break;
-                    }
-                }
+                ThryLogger.LogDetail($"Preset cache: indexing {unknown.Count} new material asset(s)");
+                IndexPresets(unknown, "Indexing New Materials");
             }
 
-            if(cacheInvalid)
+            // Rewrite the known list only when it actually differs from the project. With no
+            // unknowns left the list is a superset of the project, so a differing count means it
+            // still holds materials that were deleted - dropping them stops the file growing
+            // without bound when a tool creates and discards materials on every build.
+            if (unknown.Count > 0 || KnownMaterials.Count != currentMaterials.Length)
             {
-                ThryLogger.Log("Preset cache invalid, rebuilding...");
-                CreatePresetCache();
+                KnownMaterials.SetCollection(currentMaterials);
+                KnownMaterials.Save();
+            }
+
+            // Presets whose asset vanished are pruned by the write itself (see RemoveWithoutPath),
+            // so a dangling entry costs one file write rather than a full rebuild.
+            if (PresetCollections.Values.Any(c => c.Paths.Any(string.IsNullOrWhiteSpace)))
+            {
+                ThryLogger.LogDetail("Preset cache: dropping entries for deleted preset materials");
+                Save();
             }
         }
 
