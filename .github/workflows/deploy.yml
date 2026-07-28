@@ -56,6 +56,33 @@ jobs:
             } >> "$GITHUB_ENV"
             echo "Releasing $PACKAGE_NAME version $VERSION -> $ZIP_NAME"
         
+        # Pull the "## [X.Y.Z]" section out of CHANGELOG.md so it can head the
+        # release notes. Runs before anything is committed or pushed, so a missing
+        # entry fails the run while the repo is still untouched.
+        - name: Extract Changelog Section
+          run: |
+            set -euo pipefail
+            if [ ! -f CHANGELOG.md ]; then
+              echo "::error::CHANGELOG.md not found at the repo root."
+              exit 1
+            fi
+            # Literal prefix match, so version dots can't act as regex wildcards.
+            # Also tolerates a trailing date, e.g. "## [1.2.3] - 2026-01-01".
+            awk -v hdr="## [$VERSION]" '
+              index($0, hdr) == 1 { found = 1; next }
+              found && index($0, "## ") == 1 { exit }
+              found { print }
+            ' CHANGELOG.md > release-notes.md
+            # Trim leading/trailing blank lines.
+            sed -i -e '/./,$!d' release-notes.md
+            printf '%s\n' "$(cat release-notes.md)" > release-notes.md
+            if [ ! -s release-notes.md ]; then
+              echo "::error::No '## [$VERSION]' section with content found in CHANGELOG.md."
+              exit 1
+            fi
+            echo "Release notes for $VERSION:"
+            cat release-notes.md
+        
         - name: Stamp Version into package.json and Config.cs
           run: |
             set -euo pipefail
@@ -89,7 +116,7 @@ jobs:
         - name: Build VPM Package Zip
           run: |
             set -euo pipefail
-            zip -r "$ZIP_NAME" . -x '.git/*' -x '.github/*' -x '.claude/*' -x '*.zip'
+            zip -r "$ZIP_NAME" . -x '.git/*' -x '.github/*' -x '.claude/*' -x '*.zip' -x 'release-notes.md'
             echo "Built $ZIP_NAME"
         
         - name: Create GitHub Release
@@ -97,6 +124,9 @@ jobs:
           with:
             tag_name: ${{ github.ref_name }}
             name: ${{ github.ref_name }}
+            # GitHub prepends this body to the auto-generated notes, so the
+            # CHANGELOG.md section heads the release and "What's Changed" follows.
+            body_path: release-notes.md
             generate_release_notes: true
             files: |
               ${{ env.ZIP_NAME }}
