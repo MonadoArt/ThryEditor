@@ -27,6 +27,7 @@ namespace Thry.ThryEditor
         public string generic_string;
         public bool never_lock;
         public float margin_top = 0;
+        public float margin_bottom = 0;
         public string[] alts;
         public bool persistent_expand = true;
         public bool default_expand = false;
