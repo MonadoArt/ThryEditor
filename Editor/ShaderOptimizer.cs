@@ -1429,7 +1429,9 @@ namespace Thry.ThryEditor
                         // don't have to match if that prop does not even exist in that line
                         if (psf.lines[i].Contains(animProp.Keyword))
                         {
-                            string pattern = animProp.Keyword + @"(?!(\w|\d))";
+                            // (?<!\w) keeps the match from starting inside a longer identifier:
+                            // without it, renaming _Metallic also rewrites the tail of _LTCGI_Metallic.
+                            string pattern = @"(?<!\w)" + animProp.Keyword + @"(?!(\w|\d))";
                             psf.lines[i] = Regex.Replace(psf.lines[i], pattern, animProp.Replace, RegexOptions.Multiline);
                         }
                     }
@@ -1438,12 +1440,14 @@ namespace Thry.ThryEditor
                         if (psf.lines[i].Contains(animProp.Keyword))
                         {
                             //if Line is property definition duplicate it
-                            bool isDefinition = Regex.Match(psf.lines[i], animProp.Keyword + @"\s*\(""[^""]+""\s*,\s*\w+\)\s*=").Success;
+                            bool isDefinition = Regex.Match(psf.lines[i], @"(?<!\w)" + animProp.Keyword + @"\s*\(""[^""]+""\s*,\s*\w+\)\s*=").Success;
                             string og = null;
                             if (isDefinition)
                                 og = psf.lines[i];
 
-                            string pattern = animProp.Keyword + @"(?!(\w|\d))";
+                            // (?<!\w) keeps the match from starting inside a longer identifier:
+                            // without it, renaming _Metallic also rewrites the tail of _LTCGI_Metallic.
+                            string pattern = @"(?<!\w)" + animProp.Keyword + @"(?!(\w|\d))";
                             psf.lines[i] = Regex.Replace(psf.lines[i], pattern, animProp.Replace, RegexOptions.Multiline);
 
                             if (isDefinition)
