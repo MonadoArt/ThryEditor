@@ -1,3 +1,8 @@
+## [2.72.6]
+### Changes
+- `ShaderOptimizer`: Anchor the regex to line beginning as well. This fixes an issue where renaming `_Metallic` also rewrites the tail of `_LTCGI_Metallic` as well, as an example.
+- Added some new decorative drawers for future usage, including `[ThryHeader]` and `[ThryDescription]`.
+
 ## [2.72.5]
 ### Changes
 - Installing Poiyomi Shaders through VCC or ALCOM should now prompt you to install ThryEditor as a dependency. Updates for ThryEditor and Poiyomi Shaders are now separate.
