@@ -876,7 +876,9 @@ namespace Thry.ThryEditor
             return SetLockedForAllMaterialsInternal(materials, lockState, showProgressbar, showDialog);
         }
 
-        private static Dictionary<string, List<Material>> s_shaderPropertyCombinations = new Dictionary<string, List<Material>>();
+        // Locked shader names generated during the current batch. Needed because the batch runs inside
+        // StartAssetEditing, where the new shaders are not imported yet and so invisible to Shader.Find.
+        private static readonly HashSet<string> s_lockedShaderNamesThisBatch = new HashSet<string>();
         private static readonly List<Material> s_materialsToVerifyLock = new List<Material>();
 
         // Presets use ConsumeLockUnlockMaterialChange to suppress it's per-material logging
@@ -895,7 +897,7 @@ namespace Thry.ThryEditor
             
             // Clear stale state from previous operations
             s_applyStructsLater.Clear();
-            s_shaderPropertyCombinations.Clear();
+            s_lockedShaderNamesThisBatch.Clear();
             s_materialsToVerifyLock.Clear();
             
             // First the shaders are created. compiling is suppressed with start asset editing.
@@ -965,40 +967,46 @@ namespace Thry.ThryEditor
                     {
                         if (isLocking)
                         {
+                            MaterialProperty[] materialProps = MaterialEditor.GetMaterialProperties(new Object[] { m });
                             string hash = MaterialToShaderPropertyHash(m);
-                            // Check that shader has already been created for this hash and still exists
-                            // Or that the shader is being created for this has during this session
-                            Material reference = null;
-                            if (s_shaderPropertyCombinations.ContainsKey(hash))
+                            string lockedShaderName = LockedShaderCache.GetLockedShaderName(m.shader.name, hash);
+                            string entryDirectory = LockedShaderCache.GetEntryDirectory(m.shader.name, hash);
+
+                            // Three ways to get the shader, cheapest first:
+                            //  1. one generated earlier in this same batch. We are inside
+                            //     StartAssetEditing, so Shader.Find cannot see it yet and we track it.
+                            //  2. one already in the cache, possibly from a previous session.
+                            //  3. generate it.
+                            Shader unused;
+                            bool exists = s_lockedShaderNamesThisBatch.Contains(lockedShaderName) || LockedShaderCache.TryGetCachedShader(lockedShaderName, out unused);
+
+                            // The sidecar records which textures got stripped. Without it there is no way
+                            // to know what to strip off this material, and the orphan sweep in
+                            // LockApplyShader would then delete those textures without saving them for
+                            // restore. Regenerating is cheap next to losing a texture assignment.
+                            LockedShaderCache.EntryInfo entry = exists ? LockedShaderCache.ReadEntry(entryDirectory) : null;
+
+                            if (entry != null)
                             {
-                                s_shaderPropertyCombinations[hash].RemoveAll(m2 => m2 == null);
-                                reference = s_shaderPropertyCombinations[hash].FirstOrDefault(m2 => m2 != m && (materialsToChangeLock.Contains(m2) || Shader.Find(s_applyStructsLater[m2].newShaderName) != null));
-                            }
-                            if (reference != null)
-                            {
-                                // Reuse existing shader and struct
-                                ApplyStruct applyStruct = s_applyStructsLater[reference];
-                                applyStruct.material = m;
-                                s_applyStructsLater[m] = applyStruct;
+                                s_applyStructsLater[m] = BuildReuseApplyStruct(m, materialProps, lockedShaderName, entryDirectory);
                                 //Disable shader keywords
                                 foreach (string keyword in m.shaderKeywords)
+                                {
                                     if (m.IsKeywordEnabled(keyword)) m.DisableKeyword(keyword);
-
+                                }
                             }
                             // Create new locked shader
                             else
                             {
-                                Lock(m,
-                                    MaterialEditor.GetMaterialProperties(new Object[] { m }),
-                                    applyShaderLater: true);
-                                s_shaderPropertyCombinations[hash] = new List<Material>();
+                                Lock(m, materialProps, hash, applyShaderLater: true);
+                                s_lockedShaderNamesThisBatch.Add(lockedShaderName);
                             }
-                            // Add material to list of materials with same shader property hash
-                            s_shaderPropertyCombinations[hash].Add(m);
-                            // Update TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER of all materials with same shader property hash
-                            string tag = string.Join(",", s_shaderPropertyCombinations[hash].Select(m2 => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(m2))));
-                            foreach (Material m2 in s_shaderPropertyCombinations[hash])
-                                m2.SetOverrideTag(TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, tag);
+                            // Track this material against the shader it shares. Unlike the old in-batch
+                            // list this has to survive the session, since materials sharing a shader are
+                            // often locked at different times.
+                            string materialGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(m));
+                            LockedShaderCache.RegisterUser(entryDirectory, materialGuid);
+                            m.SetOverrideTag(TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, LockedShaderCache.GetUserTag(entryDirectory));
                         }
                         else if (!isLocking)
                         {
@@ -1058,6 +1066,10 @@ namespace Thry.ThryEditor
                 }
                 AssetDatabase.Refresh();
 
+                // Unlocking no longer deletes the shader it leaves behind, so trim the cache once it
+                // outgrows its budget. Deletes assets, so it has to run after StopAssetEditing.
+                LockedShaderCache.CollectGarbageIfOverBudget();
+
                 // Make sure things get saved after a cycle. This prevents thumbnails from getting stuck
                 if(Config.Instance.saveAfterLockUnlock)
                     EditorApplication.update += QueueSaveAfterLockUnlock;
@@ -1111,17 +1123,60 @@ namespace Thry.ThryEditor
                 else ThryLogger.LogDetail($"Successfully locked material \"{m.name}\".");
             }
         }
+        // Round-trip formatting. Baked constants are written with up to 20 decimals, while the default
+        // Color/Vector4.ToString() only emit 2-3, so anything coarser would let two materials that
+        // generate *different* source hash the same and wrongly share a locked shader.
+        static void AppendNumber(StringBuilder sb, float value)
+        {
+            sb.Append(value.ToString("R", CultureInfo.InvariantCulture)).Append(',');
+        }
 
+        static void AppendVector(StringBuilder sb, Vector4 value)
+        {
+            AppendNumber(sb, value.x);
+            AppendNumber(sb, value.y);
+            AppendNumber(sb, value.z);
+            AppendNumber(sb, value.w);
+        }
+
+        /// <summary>
+        /// Identity of everything that affects the source would generate for this
+        /// material. Two materials sharing a hash must produce byte-identical shader code, because
+        /// LockedShaderCache hands them the same shader asset - across sessions, not just
+        /// within one lock batch. Anything the generator reads has to be represented here.
+        /// </summary>
         static string MaterialToShaderPropertyHash(Material m)
         {
             StringBuilder stringBuilder = new StringBuilder(m.shader.name);
 
-            foreach (MaterialProperty prop in
-                     MaterialEditor.GetMaterialProperties(new Object[] { m }))
+            // The generated source is a transform of the original shader's text, so a changed shader
+            // (a Poiyomi update, an edited variant) must not resolve to a shader cached from the old
+            // source. The optimizer's own version matters for the same reason.
+            stringBuilder.Append('|').Append(AssetDatabase.GetAssetDependencyHash(AssetDatabase.GetAssetPath(m.shader)).ToString());
+            stringBuilder.Append('|').Append((string)Config.Instance.Version);
+
+            // Keywords drive both the #define block and which #ifdef branches survive. FixKeywords
+            // usually derives them from property values, but that is user-configurable, so they cannot
+            // be assumed to follow from the values alone.
+            string[] keywords = m.shaderKeywords.Where(k => !string.IsNullOrEmpty(k)).ToArray();
+            Array.Sort(keywords, StringComparer.Ordinal);
+            stringBuilder.Append("|kw:").Append(string.Join(" ", keywords));
+
+            // GrabPass names are read from override tags and substituted into the code. There is no API
+            // to enumerate a material's tags, so probe the same indices Lock could reach; shaders in
+            // practice declare one or two grab passes.
+            for (int grabPass = 0; grabPass < 8; grabPass++)
+            {
+                stringBuilder.Append('|').Append(m.GetTag("GrabPass" + grabPass, false, string.Empty));
+            }
+
+            foreach (MaterialProperty prop in MaterialEditor.GetMaterialProperties(new Object[] { m }))
             {
                 string propName = prop.name;
 
                 if (PropertiesToSkipInMaterialEquallityComparission.Contains(propName)) continue;
+
+                stringBuilder.Append('|').Append(propName).Append(':');
 
                 string isAnimated = GetAnimatedTag(m, propName);
 
@@ -1129,25 +1184,27 @@ namespace Thry.ThryEditor
                 {
                     stringBuilder.Append(isAnimated);
                 }
-                else if(isAnimated == "2")
+                else if (isAnimated == "2")
                 {
-                    //This is because materials with renaming should not share shaders
-                    stringBuilder.Append(m.name);
+                    // Renamed properties put the suffix into the generated code, so materials only
+                    // share a shader when the suffix matches too. It defaults to the material name but
+                    // can be overridden by the thry_rename_suffix tag, so read the resolved value.
+                    stringBuilder.Append("ren:").Append(GetRenamedPropertySuffix(m));
                 }
                 else
                 {
                     switch (prop.GetPropertyType())
                     {
                         case ShaderPropertyType.Color:
-                            stringBuilder.Append(m.GetColor(propName).ToString());
+                            Color color = m.GetColor(propName);
+                            AppendVector(stringBuilder, new Vector4(color.r, color.g, color.b, color.a));
                             break;
                         case ShaderPropertyType.Vector:
-                            stringBuilder.Append(m.GetVector(propName).ToString());
+                            AppendVector(stringBuilder, m.GetVector(propName));
                             break;
                         case ShaderPropertyType.Range:
                         case ShaderPropertyType.Float:
-                            stringBuilder.Append(m.GetFloat(propName)
-                                .ToString(CultureInfo.InvariantCulture));
+                            AppendNumber(stringBuilder, m.GetFloat(propName));
                             break;
 #if UNITY_2022_1_OR_NEWER
                         case ShaderPropertyType.Int:
@@ -1161,27 +1218,98 @@ namespace Thry.ThryEditor
                             if (t != null)
                                 texelSize = new Vector4(1.0f / t.width, 1.0f / t.height, t.width, t.height);
 
-                            stringBuilder.Append(m.GetTextureOffset(propName).ToString());
-                            stringBuilder.Append(m.GetTextureScale(propName).ToString());
+                            // Whether a texture is assigned decides if PROP_<NAME> gets defined, and
+                            // that in turn decides whether the sampler is even declared. Record it
+                            // explicitly: a null texture and a 1x1 texture share a (1,1,1,1) texel size
+                            // and would otherwise be indistinguishable here.
+                            stringBuilder.Append(t != null ? "tex" : "notex");
+
+                            Vector2 offset = m.GetTextureOffset(propName);
+                            Vector2 scale = m.GetTextureScale(propName);
+                            AppendVector(stringBuilder, new Vector4(scale.x, scale.y, offset.x, offset.y));
 
                             // Include texel size since the Optimizer bakes _<Tex>_TexelSize in as a
                             // constant. Therefore, two materials with different-resolution textures
                             // must NOT share a locked shader even when their scale/offset match.
                             // Otherwise, all but the first get a wrong baked texel size.
-                            stringBuilder.Append(texelSize.ToString());
+                            AppendVector(stringBuilder, texelSize);
                             break;
                     }
                 }
             }
 
             // https://forum.unity.com/threads/hash-function-for-game.452779/
-            byte[] bytes = Encoding.ASCII.GetBytes(stringBuilder.ToString());
+            // UTF8 rather than ASCII: property names and material names can carry non-ASCII characters,
+            // which ASCII encoding silently folds to '?' and would collide.
+            byte[] bytes = Encoding.UTF8.GetBytes(stringBuilder.ToString());
             using (var sha = new MD5CryptoServiceProvider())
                 return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLower();
         }
 #endregion
 #region Locking
-        private static bool Lock(Material material, MaterialProperty[] props, bool applyShaderLater = false)
+        /// <summary>
+        /// Collects the properties marked for animation-with-renaming (animated tag "2").
+        ///
+        /// This must always be built from the material actually being locked. Values of animated
+        /// properties are deliberately not part of the shader hash, since they are never baked into the
+        /// code, so two materials can legitimately share a locked shader while holding different values
+        /// here. Inheriting these lists from whichever material generated the shader would make
+        /// LockApplyShader copy that material's values onto this one.
+        /// </summary>
+        private static void CollectRenamedProperties(Material material, MaterialProperty[] props, string animPropertySuffix,
+            out List<RenamingProperty> toRename, out List<RenamingProperty> toDuplicate)
+        {
+            toRename = new List<RenamingProperty>();
+            toDuplicate = new List<RenamingProperty>();
+
+            foreach (MaterialProperty prop in props)
+            {
+                if (prop == null) continue;
+                if (prop.name.EndsWith(AnimatedPropertySuffix, StringComparison.Ordinal)) continue;
+
+                if (material.GetTag(prop.name + AnimatedTagSuffix, false, "") != "2") continue;
+
+                // this property might be animated, but we're not allowed to rename it. this will break things.
+                if (prop.name.EndsWith("UV", StringComparison.Ordinal) || prop.name.EndsWith("Pan", StringComparison.Ordinal)) continue;
+
+                if (IllegalPropertyRenames.Contains(prop.name))
+                    toDuplicate.Add(new RenamingProperty(prop, prop.name, prop.name + "_" + animPropertySuffix));
+                else
+                    toRename.Add(new RenamingProperty(prop, prop.name, prop.name + "_" + animPropertySuffix));
+
+                if (prop.GetPropertyType() == ShaderPropertyType.Texture)
+                {
+                    toRename.Add(new RenamingProperty(prop, prop.name + "_ST", prop.name + "_" + animPropertySuffix + "_ST"));
+                    toRename.Add(new RenamingProperty(prop, prop.name + "_TexelSize", prop.name + "_" + animPropertySuffix + "_TexelSize"));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Builds the apply-time metadata for a material that is reusing an already-generated locked
+        /// shader. Everything here is derived from the material and the cache entry's sidecar, so no
+        /// shader source is parsed - which is the entire point of the cache.
+        /// </summary>
+        private static ApplyStruct BuildReuseApplyStruct(Material material, MaterialProperty[] props, string lockedShaderName, string entryDirectory)
+        {
+            ApplyStruct applyStruct = new ApplyStruct();
+            applyStruct.material = material;
+            applyStruct.shader = material.shader;
+            applyStruct.newShaderName = lockedShaderName;
+            applyStruct.animPropertySuffix = GetRenamedPropertySuffix(material);
+
+            List<RenamingProperty> toRename;
+            List<RenamingProperty> toDuplicate;
+            CollectRenamedProperties(material, props, applyStruct.animPropertySuffix, out toRename, out toDuplicate);
+            applyStruct.animatedPropsToRename = toRename;
+            applyStruct.animatedPropsToDuplicate = toDuplicate;
+
+            LockedShaderCache.EntryInfo info = LockedShaderCache.ReadEntry(entryDirectory);
+            applyStruct.stripTextures = info != null ? info.StrippedTextures : new List<string>();
+
+            return applyStruct;
+        }
+        private static bool Lock(Material material, MaterialProperty[] props, string hash, bool applyShaderLater = false)
         {
             RenderPipeline pipeline = GetActiveRenderPipeline();
             if (pipeline == RenderPipeline.Other)
@@ -1192,33 +1320,18 @@ namespace Thry.ThryEditor
             // File filepaths and names
             Shader shader = material.shader;
             string shaderFilePath = AssetDatabase.GetAssetPath(shader);
-            string materialFilePath = AssetDatabase.GetAssetPath(material);
-            string materialFolder = Path.GetDirectoryName(materialFilePath);
-            bool isSubAsset = AssetDatabase.IsSubAsset(material);
-            if (!AssetDatabase.TryGetGUIDAndLocalFileIdentifier(material, out string guid, out long fileId))
-            {
-                guid = AssetDatabase.AssetPathToGUID(materialFilePath);
-                isSubAsset = false;
-            }
+            
+            // Named and filed by content hash rather than by material, so any material that optimizes
+            // to the same code reuses this shader instead of compiling its own copy. See LockedShaderCache.
+            string newShaderName = LockedShaderCache.GetLockedShaderName(shader.name, hash);
 
-
-
-            string newShaderName = "Hidden/Locked/" + shader.name + "/" + guid + (isSubAsset ? $"_{fileId}" : "");
             string shaderOptimizerButtonDrawerName = $"[{nameof(ThryShaderOptimizerLockButtonDrawer).Replace("Drawer", "")}]";
-            //string newShaderDirectory = materialFolder + "/OptimizedShaders/" + material.name + "-" + smallguid + "/";
-            string subfoldername = material.name;
-            while(subfoldername.StartsWith("."))
-                subfoldername = subfoldername.Substring(1) + "_dot_";
-            while(subfoldername.EndsWith("~"))
-                subfoldername = subfoldername.Substring(0, subfoldername.Length - 1) + "_tilde_";
-            string newShaderDirectory = materialFolder + "/OptimizedShaders/" + subfoldername + "/";
-
-            // if directory already exists swap to using the guid
-            if (Directory.Exists(newShaderDirectory))
-            {
-                newShaderDirectory = materialFolder + "/OptimizedShaders/" + guid + (isSubAsset ? $"_{fileId}" : "") + "/";
-            }
-
+            
+            // Kept without a trailing slash so it matches the form the cache hands back everywhere else;
+            // the file-writing loop below appends the separator itself.
+            string entryDirectory = LockedShaderCache.GetEntryDirectory(shader.name, hash);
+            string newShaderDirectory = entryDirectory + "/";
+            LockedShaderCache.EnsureCacheRoot();
 
             // suffix for animated properties when renaming is enabled
             string animPropertySuffix = GetRenamedPropertySuffix(material);
@@ -1236,8 +1349,9 @@ namespace Thry.ThryEditor
             KeywordsUsedByPragmas.Clear();
 
             List<PropertyData> constantProps = new List<PropertyData>();
-            List<RenamingProperty> animatedPropsToRename = new List<RenamingProperty>();
-            List<RenamingProperty> animatedPropsToDuplicate = new List<RenamingProperty>();
+            List<RenamingProperty> animatedPropsToRename;
+            List<RenamingProperty> animatedPropsToDuplicate;
+            CollectRenamedProperties(material, props, animPropertySuffix, out animatedPropsToRename, out animatedPropsToDuplicate);
             List<string> stripTextures = new List<string>();
             foreach (MaterialProperty prop in props)
             {
@@ -1289,23 +1403,7 @@ namespace Thry.ThryEditor
                 string animateTag = material.GetTag(prop.name + AnimatedTagSuffix, false, "");
                 if (!string.IsNullOrEmpty(animateTag))
                 {
-                    // check if we're renaming the property as well
-                    if (animateTag == "2")
-                    {
-                        if (!prop.name.EndsWith("UV", StringComparison.Ordinal) && !prop.name.EndsWith("Pan", StringComparison.Ordinal)) // this property might be animated, but we're not allowed to rename it. this will break things.
-                        {
-                            if (IllegalPropertyRenames.Contains(prop.name))
-                                animatedPropsToDuplicate.Add(new RenamingProperty(prop, prop.name, prop.name + "_" + animPropertySuffix));
-                            else
-                                animatedPropsToRename.Add(new RenamingProperty(prop, prop.name, prop.name + "_" + animPropertySuffix));
-                            if (prop.GetPropertyType() == ShaderPropertyType.Texture)
-                            {
-                                animatedPropsToRename.Add(new RenamingProperty(prop, prop.name + "_ST", prop.name + "_" + animPropertySuffix + "_ST"));
-                                animatedPropsToRename.Add(new RenamingProperty(prop, prop.name + "_TexelSize", prop.name + "_" + animPropertySuffix + "_TexelSize"));
-                            }
-                        }
-                    }
-
+                    // Renamed properties are collected by CollectRenamedProperties before this loop runs.
                     continue;
                 }
 
@@ -1621,6 +1719,13 @@ namespace Thry.ThryEditor
             }
 
             AssetDatabase.Refresh();
+
+            // Record which textures were stripped. A later session that reuses this shader skips the
+            // parse entirely, so it has no other way to learn what to strip off the material - and
+            // without it, unlock could not restore them.
+            LockedShaderCache.EntryInfo entryInfo = new LockedShaderCache.EntryInfo();
+            entryInfo.StrippedTextures.AddRange(stripTextures);
+            LockedShaderCache.WriteEntry(entryDirectory, entryInfo);
 
             ApplyStruct applyStruct = new ApplyStruct();
             applyStruct.material = material;
@@ -2659,6 +2764,22 @@ namespace Thry.ThryEditor
 
                 CopyProperty(material, prop, propName);
             }
+            string lockedShaderAssetPath = brokenLockedShader ? null : AssetDatabase.GetAssetPath(lockedShader);
+
+            // Shaders that live in the cache are kept. That is the whole point: re-locking this material,
+            // or locking any other material with the same settings, then costs nothing instead of a full
+            // regenerate and recompile. LockedShaderCache trims what nothing references any more.
+            if (LockedShaderCache.IsInCache(lockedShaderAssetPath))
+            {
+                string entryDirectory = Path.GetDirectoryName(lockedShaderAssetPath).Replace('\\', '/');
+                LockedShaderCache.DeregisterUser(entryDirectory, unlockedMaterialGUID);
+                material.SetOverrideTag(TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, string.Empty);
+                return UnlockSuccess.success;
+            }
+
+            // Legacy path: shaders generated before the cache existed sit in per-material
+            // OptimizedShaders folders next to the material. Nothing will ever reuse those, so keep
+            // deleting them on unlock rather than leaving orphans scattered around the project.
 
             // Move the locked shader to trash or the whole folder if it's the only file in there
             // But only if no other material is using the locked shader
@@ -2684,7 +2805,7 @@ namespace Thry.ThryEditor
             {
 	            try
 	            {
-		            string lockedShaderPath = AssetDatabase.GetAssetPath(lockedShader);
+		            string lockedShaderPath = lockedShaderAssetPath;
 		            string lockedFolder = Path.GetDirectoryName(lockedShaderPath);
 
 		            // If this is the only asset in a folder that isn't the root of the assets folder, send whole folder to trash
