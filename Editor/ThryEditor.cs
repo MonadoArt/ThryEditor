@@ -856,6 +856,18 @@ namespace Thry
             if (GUILib.ButtonWithCursor(iconRect, Icons.thryIcon, "Thryrallo"))
                 Application.OpenURL("https://www.twitter.com/thryrallo");
 
+            // Buttons added by packages built on this UI. Drawn last so the built-ins keep their
+            // positions. The icon is resolved here rather than at registration time.
+            foreach (var extra in TopBarButtons.All)
+            {
+                GUIStyle style = extra.Icon();
+                if (style == null) continue;
+
+                iconRect.x += 25;
+                if (GUILib.ButtonWithCursor(iconRect, style, extra.Tooltip))
+                    extra.OnClick();
+            }
+
             float rightEdge = topBarRect.x + topBarRect.width - GUILib.EDGE_PADDING + GUILib.UNITY_HEADER_RIGHT_MARGIN;
 
             Rect headerRect = new Rect(topBarRect);
