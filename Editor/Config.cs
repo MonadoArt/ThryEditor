@@ -64,7 +64,7 @@ namespace Thry.ThryEditor
         public bool fixKeywordsWhenLocking = true;
         public bool saveAfterLockUnlock = true;
 
-        // Size ceiling for Assets/OptimizedShaders. Once exceeded, locked shaders that no material
+        // Size ceiling for Assets/_LockedShaderCache. Once exceeded, locked shaders that no material
         // references any more are deleted least-recently-used first. 0 disables trimming.
         public int lockedShaderCacheBudgetMB = 2048;
 

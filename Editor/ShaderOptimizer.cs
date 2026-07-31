@@ -2730,7 +2730,11 @@ namespace Thry.ThryEditor
             Dictionary<string, string> preservedTags = MaterialHelper.GetOwnOverrideTags(material, MaterialHelper.TagsPreservedAcrossShaderSwap);
             string unlockedMaterialGUID = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(material));
             DetourApplyMaterialPropertyDrawers();
-            if (ShaderEditor.Active != null) ShaderEditor.Active.SetShader(originalShader);
+            if (ShaderEditor.Active != null)
+            {
+                ShaderEditor.Active.SetShader(originalShader);
+                ShaderEditor.Active.Reload();
+            }
             material.shader = originalShader;
             RestoreApplyMaterialPropertyDrawers();
             material.SetOverrideTag("RenderType", renderType);

@@ -8,6 +8,7 @@ using Thry.ThryEditor.Helpers;
 using UnityEditor;
 using UnityEditor.PackageManager;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace Thry.ThryEditor
 {
@@ -197,6 +198,7 @@ namespace Thry.ThryEditor
             Toggle(nameof(Config.forceAsyncCompilationPreview));
             Toggle(nameof(Config.saveAfterLockUnlock));
             Toggle(nameof(Config.fixKeywordsWhenLocking));
+            IntField(nameof(Config.lockedShaderCacheBudgetMB), min: 0);
 
             EditorGUILayout.Space();
             GUILayout.Label(EditorLocale.editor.Get("developer_header"), EditorStyles.boldLabel);
@@ -296,8 +298,41 @@ namespace Thry.ThryEditor
                     field.SetValue(config, value);
                     config.Save();
                 }
+                if (createHorizontal) GUILayout.EndHorizontal();
+            }
+        }
+
+        private static void IntField(string configField, int min = int.MinValue, bool createHorizontal = true)
+        {
+            IntField(configField, EditorLocale.editor.Get(configField), EditorLocale.editor.Get(configField + "_tooltip"), min, createHorizontal);
+        }
+
+        private static void IntField(string configField, string[] content, int min = int.MinValue, bool createHorizontal = true)
+        {
+            IntField(configField, content[0], content[1], min, createHorizontal);
+        }
+
+        private static void IntField(string configField, string text, string tooltip, int min = int.MinValue, bool createHorizontal = true)
+        {
+            Config config = Config.Instance;
+            System.Reflection.FieldInfo field = typeof(Config).GetField(configField);
+            if (field != null)
+            {
+                int value = (int)field.GetValue(config);
                 if (createHorizontal)
-                    GUILayout.EndHorizontal();
+                    GUILayout.BeginHorizontal(GUILayout.ExpandWidth(false));
+                GUILayout.Space(57);
+                GUILayout.Label(new GUIContent(text, tooltip), GUILayout.ExpandWidth(false));
+                EditorGUI.BeginChangeCheck();
+                // Delayed so the value is only committed when the user finishes typing - an intermediate
+                // "2" on the way to "2048" would otherwise be applied as a budget and trigger a sweep.
+                value = EditorGUILayout.DelayedIntField("", value, GUILayout.ExpandWidth(false));
+                if (EditorGUI.EndChangeCheck())
+                {
+                    field.SetValue(config, Mathf.Max(min, value));
+                    config.Save();
+                }
+                if (createHorizontal) GUILayout.EndHorizontal();
             }
         }
 
@@ -415,5 +450,7 @@ namespace Thry.ThryEditor
             }
             return expanded;
         }
+
+
     }
 }
