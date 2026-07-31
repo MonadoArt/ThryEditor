@@ -1,3 +1,7 @@
+## [2.72.7]
+### Changes
+- Fixed an issue where Global Linking failed when there are 2 properties with the same name.
+
 ## [2.72.6]
 ### Changes
 - `ShaderOptimizer`: Anchor the regex to line beginning as well. This fixes an issue where renaming `_Metallic` also rewrites the tail of `_LTCGI_Metallic` as well, as an example.
