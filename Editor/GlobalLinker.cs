@@ -451,14 +451,20 @@ namespace Thry.ThryEditor
 
         private static void CaptureRecursive(List<GlobalLinkPropertyValue> captured, ShaderGroup group)
         {
+            CaptureRecursive(captured, group, new HashSet<string>());
+        }
+
+        private static void CaptureRecursive(List<GlobalLinkPropertyValue> captured, ShaderGroup group, HashSet<string> seenNames)
+        {
             foreach (ShaderPart child in group.Children)
             {
-                if (child.MaterialProperty != null)
+                if (child.MaterialProperty != null && seenNames.Add(child.MaterialProperty.name))
                 {
                     GlobalLinkPropertyValue pv = CaptureProperty(child.MaterialProperty);
-                    if (pv != null)captured.Add(pv);
+                    if (pv != null) captured.Add(pv);
+                    else seenNames.Remove(child.MaterialProperty.name);
                 }
-                if (child is ShaderGroup childGroup) CaptureRecursive(captured, childGroup);
+                if (child is ShaderGroup childGroup) CaptureRecursive(captured, childGroup, seenNames);
             }
         }
 
