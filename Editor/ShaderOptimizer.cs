@@ -1077,6 +1077,14 @@ namespace Thry.ThryEditor
                 if (ShaderEditor.Active != null)
                 {
                     Selection.objects = prevTargets;
+
+                    // Clearing and restoring the selection above was meant to make the Inspector drop and
+                    // rebuild its editors, the way deselecting and re-selecting by hand does. Unity defers
+                    // selection changes to the end of the frame though, so doing both within one call
+                    // stack nets to no change and no rebuild happens. Ask the tracker directly instead,
+                    // on a later tick so it does not run inside the GUI pass that triggered the lock.
+                    EditorApplication.update -= QueueInspectorRebuild;
+                    EditorApplication.update += QueueInspectorRebuild;
                 }
 
                 return true;
@@ -1092,6 +1100,16 @@ namespace Thry.ThryEditor
                 }
                 EditorUtility.ClearProgressBar();
             }
+        }
+
+        // Rebuilds the Inspector's editors, which is what actually makes the UI interactive again after a
+        // lock or unlock. The material's shader changed underneath an editor that is mid-GUI-pass, and
+        // nothing short of recreating that editor recovers it - which is why deselecting and res-electing
+        // by hand works. Runs a tick later so it never fires inside the GUI pass that started the lock.
+        static void QueueInspectorRebuild()
+        {
+            EditorApplication.update -= QueueInspectorRebuild;
+            ActiveEditorTracker.sharedTracker.ForceRebuild();
         }
 
         // This is just a wrapper so that it waits a cycle before saving

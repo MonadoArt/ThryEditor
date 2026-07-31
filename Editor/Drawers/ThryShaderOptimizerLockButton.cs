@@ -34,6 +34,14 @@ namespace Thry.ThryEditor.Drawers
             // But in a case where the material property says its locked in but the material really isn't, this
             // will display and allow users to fix the property/lock in
             ShaderEditor.Active.IsLockedMaterial = shaderOptimizer.GetNumber() == 1;
+
+            // Locking swaps the shader, so the set of properties this inspector draws changes completely
+            // partway through the current GUI pass. IMGUI matches controls between its Layout and Repaint
+            // events by order, so continuing to draw after that leaves every following control mismatched
+            // and unresponsive until the inspector is rebuilt. Finish the pass early instead, which is the
+            // same thing ShaderEditor.OnGUI already does for undo, for the same reason.
+            bool doExitGUI = false;
+
             if (shaderOptimizer.hasMixedValue)
             {
                 if(RectifiedLayout.Button(EditorLocale.editor.Get("lockin_button_multi").ReplaceVariables(materialEditor.targets.Length)))
@@ -41,6 +49,7 @@ namespace Thry.ThryEditor.Drawers
                     SaveChangeStack();
                     ShaderOptimizer.ToggleLockFromPropertyButton(shaderOptimizer);
                     RestoreChangeStack();
+                    doExitGUI = true;
                 }
             }
             else
@@ -65,7 +74,7 @@ namespace Thry.ThryEditor.Drawers
                     SaveChangeStack();
                     ShaderOptimizer.ToggleLockFromPropertyButton(shaderOptimizer);
                     RestoreChangeStack();
-                    Object[] targets = Selection.objects;
+                    doExitGUI = true;
                 }
             }
             if (Config.Instance.allowCustomLockingRenaming || ShaderEditor.Active.HasCustomRenameSuffix)
@@ -93,6 +102,14 @@ namespace Thry.ThryEditor.Drawers
             }
 
             EditorGUI.EndDisabledGroup(); // for variant materials
+
+            // Deliberately after the disabled groups are closed: ExitGUI unwinds by throwing, so calling
+            // it at the click site would leave the group stack unbalanced.
+            if (doExitGUI)
+            {
+                ShaderEditor.Active.Reload();
+                GUIUtility.ExitGUI();
+            }
         }
 
         //This code purly exists cause Unity 2019 is a piece of shit that looses it's internal change stack on locking CAUSE FUCK IF I KNOW
