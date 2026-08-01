@@ -277,7 +277,9 @@ namespace Thry
                 if (name.StartsWith("space", StringComparison.Ordinal)) return ThryPropertyType.space;
             }
             if (name == ShaderOptimizerPropertyName)  return ThryPropertyType.optimizer;
-            if (name == PROPERTY_NAME_IN_SHADER_PRESETS) return ThryPropertyType.in_shader_presets;
+            // Any recognized preset name, not just _Mode, so shaders that call it something else (a grab pass's
+            // _GrabMode, say) get the same labelless dropdown next to the presets bar instead of a property row.
+            if (RenderingPresets.PresetPropertyNames.Contains(name)) return ThryPropertyType.in_shader_presets;
 
 #if UNITY_6000_2_OR_NEWER
             if (flags.HasFlag(UnityEngine.Rendering.ShaderPropertyFlags.HideInInspector)) return ThryPropertyType.hidden_property;
@@ -339,7 +341,7 @@ namespace Thry
         /// </summary>
         public static void ApplyRenderingPresetToMaterial(Material material, float modeValue)
         {
-            if (material == null || !material.HasProperty(PROPERTY_NAME_IN_SHADER_PRESETS)) return;
+            if (material == null || !RenderingPresets.PresetPropertyNames.Any(n => material.HasProperty(n))) return;
 
             ShaderEditor previousActive = Active;
             ShaderEditor tempEditor = new ShaderEditor();
@@ -377,6 +379,7 @@ namespace Thry
 
             PropertyDictionary = new Dictionary<string, ShaderProperty>();
             ShaderParts = new List<ShaderPart>();
+            InShaderPresetsProperty = null; // Cleared so the preset picked below is always one from this pass
             _mainGroup = new ShaderGroup(this); //init top object that all Shader Objects are childs of
             Stack<ShaderGroup> groupStack = new Stack<ShaderGroup>(); //header stack. used to keep track if editorData header to parent new objects to
             groupStack.Push(_mainGroup); //add top object as top object to stack
@@ -491,8 +494,13 @@ namespace Thry
                         doAssignPropertyToGroup = false;
                         break;
                     case ThryPropertyType.in_shader_presets:
-                        InShaderPresetsProperty = new ShaderProperty(this, props[i], displayName, offset, optionsRaw, false, i);
-                        NewProperty = InShaderPresetsProperty;
+                        ShaderProperty presetsProperty = new ShaderProperty(this, props[i], displayName, offset, optionsRaw, false, i);
+                        // A shader is expected to declare one preset property; should it declare several, the most
+                        // specific name wins, matching how RenderingPresets resolves it.
+                        if (InShaderPresetsProperty == null ||
+                            RenderingPresets.PresetPropertyNames.IndexOf(props[i].name) < RenderingPresets.PresetPropertyNames.IndexOf(InShaderPresetsProperty.MaterialProperty.name))
+                            InShaderPresetsProperty = presetsProperty;
+                        NewProperty = presetsProperty;
                         doAssignPropertyToGroup = false;
                         break;
                 }
@@ -855,6 +863,18 @@ namespace Thry
             iconRect.x += 25;
             if (GUILib.ButtonWithCursor(iconRect, Icons.thryIcon, "Thryrallo"))
                 Application.OpenURL("https://www.twitter.com/thryrallo");
+
+            // Buttons added by packages built on this UI. Drawn last so the built-ins keep their
+            // positions. The icon is resolved here rather than at registration time.
+            foreach (var extra in TopBarButtons.All)
+            {
+                GUIStyle style = extra.Icon();
+                if (style == null) continue;
+
+                iconRect.x += 25;
+                if (GUILib.ButtonWithCursor(iconRect, style, extra.Tooltip))
+                    extra.OnClick();
+            }
 
             float rightEdge = topBarRect.x + topBarRect.width - GUILib.EDGE_PADDING + GUILib.UNITY_HEADER_RIGHT_MARGIN;
 

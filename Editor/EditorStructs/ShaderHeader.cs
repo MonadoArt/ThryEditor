@@ -23,7 +23,11 @@ namespace Thry.ThryEditor
             MyShaderUI.CurrentProperty = this;
             EditorGUI.BeginChangeCheck();
             Rect position = GUILayoutUtility.GetRect(content, Styles.flatHeader);
-            GUILayout.Space(-2); // Reduce spacing between headers
+            // Reduce spacing between headers. The resulting pitch must stay even:
+            // flatHeader.fixedHeight (22) + margin.bottom (2) + this space (-2) + margin.top (2) = 24.
+            // An odd pitch lands every other header on a half device-pixel at fractional editor DPI
+            // scaling, which makes the gap below it rasterize 1px wider than its neighbours'.
+            GUILayout.Space(-2);
             DrawHeader(position, content);
             Rect headerRect = DrawingData.LastGuiObjectHeaderRect;
             if (IsExpanded)
@@ -69,7 +73,7 @@ namespace Thry.ThryEditor
             DrawingData.LastGuiObjectHeaderRect = position;
             DrawBoxAndContent(position, e, label, options);
 
-            Rect arrowRect = new Rect(position) { y = position.y + 1, height = 18 };
+            Rect arrowRect = new Rect(position) { y = position.y + (position.height - 18) / 2, height = 18 };
             FoldoutArrow(arrowRect, e);
 
             HandleToggleInput(position);
@@ -250,9 +254,9 @@ namespace Thry.ThryEditor
         private void DrawIcons(Rect rect, PropertyOptions options, Event e)
         {
             Rect buttonRect = new Rect(rect);
-            buttonRect.y = rect.y + 2;
             buttonRect.width = 16;
             buttonRect.height = 16;
+            buttonRect.y = rect.y + (rect.height - buttonRect.height) / 2;
 
             float right = rect.x + rect.width - 2;
             float step = buttonRect.width + 2f;
