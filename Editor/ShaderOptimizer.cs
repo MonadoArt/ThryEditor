@@ -879,6 +879,11 @@ namespace Thry.ThryEditor
         // Locked shader names generated during the current batch. Needed because the batch runs inside
         // StartAssetEditing, where the new shaders are not imported yet and so invisible to Shader.Find.
         private static readonly HashSet<string> s_lockedShaderNamesThisBatch = new HashSet<string>();
+
+        // Cache entries whose set of users changed during the batch, so the shared-shader tag can be
+        // reconciled across every material sharing them once, rather than per material.
+        private static readonly HashSet<string> s_cacheEntriesTouchedThisBatch = new HashSet<string>();
+
         private static readonly List<Material> s_materialsToVerifyLock = new List<Material>();
 
         // Presets use ConsumeLockUnlockMaterialChange to suppress it's per-material logging
@@ -898,6 +903,7 @@ namespace Thry.ThryEditor
             // Clear stale state from previous operations
             s_applyStructsLater.Clear();
             s_lockedShaderNamesThisBatch.Clear();
+            s_cacheEntriesTouchedThisBatch.Clear();
             s_materialsToVerifyLock.Clear();
             
             // First the shaders are created. compiling is suppressed with start asset editing.
@@ -968,7 +974,7 @@ namespace Thry.ThryEditor
                         if (isLocking)
                         {
                             MaterialProperty[] materialProps = MaterialEditor.GetMaterialProperties(new Object[] { m });
-                            string hash = MaterialToShaderPropertyHash(m);
+                            string hash = MaterialToShaderPropertyHash(m, materialProps);
                             string lockedShaderName = LockedShaderCache.GetLockedShaderName(m.shader.name, hash);
                             string entryDirectory = LockedShaderCache.GetEntryDirectory(m.shader.name, hash);
 
@@ -1007,6 +1013,10 @@ namespace Thry.ThryEditor
                             string materialGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(m));
                             LockedShaderCache.RegisterUser(entryDirectory, materialGuid);
                             m.SetOverrideTag(TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, LockedShaderCache.GetUserTag(entryDirectory));
+                            // The materials already sharing this shader now have a tag that omits this
+                            // one. Rewriting them all here would be quadratic over a batch, so note the
+                            // entry and reconcile every sibling once the batch is done.
+                            s_cacheEntriesTouchedThisBatch.Add(entryDirectory);
                         }
                         else if (!isLocking)
                         {
@@ -1066,6 +1076,9 @@ namespace Thry.ThryEditor
                 }
                 AssetDatabase.Refresh();
 
+                // Bring every material sharing a touched shader back in sync with who actually uses it.
+                ReconcileSharedShaderTags();
+
                 // Unlocking no longer deletes the shader it leaves behind, so trim the cache once it
                 // outgrows its budget. Deletes assets, so it has to run after StopAssetEditing.
                 LockedShaderCache.CollectGarbageIfOverBudget();
@@ -1100,6 +1113,35 @@ namespace Thry.ThryEditor
                 }
                 EditorUtility.ClearProgressBar();
             }
+        }
+
+        /// <summary>
+        /// Rewrites TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER on every material sharing a cache
+        /// entry whose users changed during this batch.
+        ///
+        /// A material only knows about the others it shares a locked shader with through this tag, and
+        /// that list goes stale in both directions: a material joining an entry is absent from the tags
+        /// of the ones already there, and one that unlocks stays listed on the rest. The cache sidecar is
+        /// the authority on who actually uses an entry, so the tags are rebuilt from it.
+        /// </summary>
+        static void ReconcileSharedShaderTags()
+        {
+            foreach (string entryDirectory in s_cacheEntriesTouchedThisBatch)
+            {
+                LockedShaderCache.EntryInfo info = LockedShaderCache.ReadEntry(entryDirectory);
+                if (info == null) continue;
+
+                string tag = string.Join(",", info.UserGuids.ToArray());
+                foreach (string guid in info.UserGuids)
+                {
+                    Material sibling = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guid));
+                    // A material that has since been unlocked or deleted is not a user any more; the
+                    // sidecar catches up the next time it is locked.
+                    if (sibling != null && sibling.IsLocked())
+                        sibling.SetOverrideTag(TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, tag);
+                }
+            }
+            s_cacheEntriesTouchedThisBatch.Clear();
         }
 
         // Rebuilds the Inspector's editors, which is what actually makes the UI interactive again after a
@@ -1163,7 +1205,7 @@ namespace Thry.ThryEditor
         /// LockedShaderCache hands them the same shader asset - across sessions, not just
         /// within one lock batch. Anything the generator reads has to be represented here.
         /// </summary>
-        static string MaterialToShaderPropertyHash(Material m)
+        static string MaterialToShaderPropertyHash(Material m, MaterialProperty[] props)
         {
             StringBuilder stringBuilder = new StringBuilder(m.shader.name);
 
@@ -1188,8 +1230,12 @@ namespace Thry.ThryEditor
                 stringBuilder.Append('|').Append(m.GetTag("GrabPass" + grabPass, false, string.Empty));
             }
 
-            foreach (MaterialProperty prop in MaterialEditor.GetMaterialProperties(new Object[] { m }))
+            // Properties are passed in rather than fetched here: the caller already has them, and on a
+            // shader this size a second GetMaterialProperties call means allocating several thousand
+            // MaterialProperty objects again for every material being locked.
+            foreach (MaterialProperty prop in props)
             {
+                if (prop == null) continue;
                 string propName = prop.name;
 
                 if (PropertiesToSkipInMaterialEquallityComparission.Contains(propName)) continue;
@@ -1509,14 +1555,21 @@ namespace Thry.ThryEditor
             if (!ParseShaderFilesRecursive(shaderFiles, newShaderDirectory, shaderFilePath, macros, material, stripTextures))
                 return false;
 
-            // Remove all defines where name if not in shader files
-            List<(string,string)> definesToRemove = new List<(string,string)>();
-            foreach((string name,string) def in defines)
+            // Remove all defines where name if not in shader files.
+            // Written as plain loops rather than nested LINQ: this runs once per define across every
+            // line of the shader, and the closures allocated per define per file were showing up for no
+            // reason. Substring matching and the early exit on first hit are unchanged.
+            defines.RemoveAll(def =>
             {
-                if (shaderFiles.All(x => x.lines.Any(l => l.Contains(def.name)) == false))
-                    definesToRemove.Add(def);
-            }
-            defines.RemoveAll(x => definesToRemove.Contains(x));
+                foreach (ParsedShaderFile psf in shaderFiles)
+                {
+                    if (psf.lines == null) continue;
+                    foreach (string line in psf.lines)
+                        if (line.IndexOf(def.name, StringComparison.Ordinal) >= 0)
+                            return false; // referenced somewhere, keep it
+                }
+                return true;
+            });
             // Append convention OPTIMIZER_ENABLED keyword
             defines.Add((OptimizerEnabledKeyword,""));
             string optimizerDefines = "";
@@ -2796,6 +2849,8 @@ namespace Thry.ThryEditor
                 string entryDirectory = Path.GetDirectoryName(lockedShaderAssetPath).Replace('\\', '/');
                 LockedShaderCache.DeregisterUser(entryDirectory, unlockedMaterialGUID);
                 material.SetOverrideTag(TAG_ALL_MATERIALS_GUIDS_USING_THIS_LOCKED_SHADER, string.Empty);
+                // Siblings still list this material as a user of the shader. Reconciled after the batch.
+                s_cacheEntriesTouchedThisBatch.Add(entryDirectory);
                 return UnlockSuccess.success;
             }
 

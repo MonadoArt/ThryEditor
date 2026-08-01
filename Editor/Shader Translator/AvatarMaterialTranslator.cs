@@ -121,8 +121,12 @@ namespace Thry.ThryEditor.ShaderTranslations
 
             targetShaderDropdown = root.Q<DropdownField>("targetShader");
 
-            allShaderNames = AssetDatabase.FindAssets("t:Shader")
-                .Select(guid => AssetDatabase.LoadAssetAtPath<Shader>(AssetDatabase.GUIDToAssetPath(guid)).name)
+            // ShaderInfo carries the name without loading the shader. Going through LoadAssetAtPath here
+            // pulled every shader in the project into memory just to read a string - on a project with
+            // Poiyomi installed that is dozens of multi-megabyte shaders - and threw on any that failed
+            // to load. Matches how ShaderTranslatorEditor builds the same list.
+            allShaderNames = ShaderUtil.GetAllShaderInfo()
+                .Select(s => s.name)
                 .Where(x => !x.StartsWith("Hidden/"))
                 .ToList();
 
