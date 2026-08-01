@@ -1,5 +1,5 @@
 ## [2.72.8]
-### CHanges
+### Changes
 - Fixed uneven header spacing under fractional DPI scaling.
 - Added Top Bar Button registration point, letting packages build on this UI add their own Top Bar Buttons without an assembly needing to reference them.
 - Ensure the Rendering Presets dropdown property name is properly recognized (affects Grab Pass, Triplanar Projection, etc.).
