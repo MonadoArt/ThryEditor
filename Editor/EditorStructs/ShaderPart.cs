@@ -1423,6 +1423,8 @@ namespace Thry.ThryEditor
             return enumerator.Current;
         }
 
+        internal virtual void EnsureAnimatedStateResolved() { }
+
         public void SetAnimated(bool animated, bool renamed)
         {
             if (IsAnimated == animated && IsRenaming == renamed) return;
