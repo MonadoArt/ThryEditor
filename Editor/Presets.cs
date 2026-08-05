@@ -776,7 +776,10 @@ namespace Thry.ThryEditor
             // the Standard shader keeps orphaned properties after the swap), which triggers a
             // "Original shader not saved to material" warning when the scene is saved.
             Material source = new Material(preset);
-            source.shader = shaderEditor.Shader;
+            // Assigning a shader resets the render queue to the shader's default and drops the material's own
+            // override tags, so a preset storing a Render Queue or VRC Fallback would hand those defaults to the
+            // target instead of the values it recorded. Swap through the helper that carries both across.
+            MaterialHelper.SwapShaderPreservingSettings(source, shaderEditor.Shader);
             // If values were meant to be copied straight from the preset, read them from the clone instead.
             if (copyFrom == preset) copyFrom = source;
 

@@ -930,28 +930,33 @@ namespace Thry.ThryEditor
                     if (ShaderEditor.Active.IsPresetEditor)
                     {
                         _contextMenu.AddItem(new GUIContent("Is part of preset"), IsPreset, ToggleIsPreset);
-                        _contextMenu.AddSeparator("");
+                        if (MaterialProperty != null) _contextMenu.AddSeparator("");
                     }
-                    _contextMenu.AddItem(new GUIContent("Copy Property Name"), false, () => { EditorGUIUtility.systemCopyBuffer = MaterialProperty.name; });
-                    _contextMenu.AddItem(new GUIContent("Copy Animated Property Name"), false, () => { EditorGUIUtility.systemCopyBuffer = GetAnimatedPropertyName(); });
-                    _contextMenu.AddItem(new GUIContent("Copy Animated Property Path"), false, CopyPropertyPath);
-                    _contextMenu.AddItem(new GUIContent("Copy Property as Keyframe"), false, CopyPropertyAsKeyframe);
-                    if (IsAnimationWindowRecording()) _contextMenu.AddItem(new GUIContent("Add Keyframe to Animation"), false, AddKeyToAnimationClip);
-#if UNITY_2022_1_OR_NEWER
-                    bool isLockedInChildren = false;
-                    bool isLockedByAncestor = false;
-                    bool isOverriden = true;
-                    foreach (Material target in ShaderEditor.Active.Materials)
+
+                    // Null-check against a valid MaterialProperty. Otherwise, a NullReferenceException would be thrown.
+                    if (MaterialProperty != null)
                     {
-                        if (target == null) continue;
-                        int nameId = Shader.PropertyToID(MaterialProperty.name);
-                        isLockedInChildren |= target.IsPropertyLocked(nameId);
-                        isLockedByAncestor |= target.IsPropertyLockedByAncestor(nameId);
-                        isOverriden &= target.IsPropertyOverriden(nameId);
-                    }
-                    DoVariantMenuStuff(_contextMenu, isOverriden, isLockedByAncestor, isLockedInChildren, ShaderEditor.Active.Materials, true);
+                        _contextMenu.AddItem(new GUIContent("Copy Property Name"), false, () => { EditorGUIUtility.systemCopyBuffer = MaterialProperty.name; });
+                        _contextMenu.AddItem(new GUIContent("Copy Animated Property Name"), false, () => { EditorGUIUtility.systemCopyBuffer = GetAnimatedPropertyName(); });
+                        _contextMenu.AddItem(new GUIContent("Copy Animated Property Path"), false, CopyPropertyPath);
+                        _contextMenu.AddItem(new GUIContent("Copy Property as Keyframe"), false, CopyPropertyAsKeyframe);
+                        if (IsAnimationWindowRecording()) _contextMenu.AddItem(new GUIContent("Add Keyframe to Animation"), false, AddKeyToAnimationClip);
+#if UNITY_2022_1_OR_NEWER
+                        bool isLockedInChildren = false;
+                        bool isLockedByAncestor = false;
+                        bool isOverriden = true;
+                        foreach (Material target in ShaderEditor.Active.Materials)
+                        {
+                            if (target == null) continue;
+                            int nameId = Shader.PropertyToID(MaterialProperty.name);
+                            isLockedInChildren |= target.IsPropertyLocked(nameId);
+                            isLockedByAncestor |= target.IsPropertyLockedByAncestor(nameId);
+                            isOverriden &= target.IsPropertyOverriden(nameId);
+                        }
+                        DoVariantMenuStuff(_contextMenu, isOverriden, isLockedByAncestor, isLockedInChildren, ShaderEditor.Active.Materials, true);
 #endif
-                    _contextMenu.ShowAsContext();
+                    }
+                    if (_contextMenu.GetItemCount() > 0) _contextMenu.ShowAsContext();
                 }
             }
         }
@@ -1174,7 +1179,11 @@ namespace Thry.ThryEditor
         void ToggleIsPreset()
         {
             IsPreset = !IsPreset;
-            if (MaterialProperty != null) Presets.SetProperty(MyShaderUI.Materials[0], this, IsPreset);
+            
+            // Presets.SetProperty writes a tag for whichever identifiers this part has. Gating on MaterialProperty
+            // meant parts identified by a string tag instead (Render Queue, VRC Fallback) flipped the checkmark
+            // without ever recording it on the preset material, so the choice was lost on the next reload.
+            Presets.SetProperty(MyShaderUI.Materials[0], this, IsPreset);
             ShaderEditor.RepaintActive();
         }
 
