@@ -1,8 +1,9 @@
 name: Build VCC Package Release
 
-# To Deploy a release, do so via Git via command with a semantic version:
+# To Deploy a release, do so by pushing a tag to the repository:
+#
 # > git tag x.y.z
-# AND
+# THEN push it
 # > git push origin x.y.z
 #
 # EXAMPLE:
@@ -10,7 +11,7 @@ name: Build VCC Package Release
 # THEN
 # > git push origin 2.71.4
 #
-# Pushing a tag will always trigger the deployment.
+# Pushing a tag will always trigger a deployment.
 #
 # The tag will write the package.json AND Config.cs with the version number
 # (tag) specified. MAKE SURE it's a newer version than the current one!
@@ -56,7 +57,7 @@ jobs:
             } >> "$GITHUB_ENV"
             echo "Releasing $PACKAGE_NAME version $VERSION -> $ZIP_NAME"
         
-        # Pull the "## [X.Y.Z]" section out of CHANGELOG.md so it can head the
+        # Pull the "# [X.Y.Z]" section out of CHANGELOG.md so it can head the
         # release notes. Runs before anything is committed or pushed, so a missing
         # entry fails the run while the repo is still untouched.
         - name: Extract Changelog Section
@@ -67,8 +68,8 @@ jobs:
               exit 1
             fi
             # Literal prefix match, so version dots can't act as regex wildcards.
-            # Also tolerates a trailing date, e.g. "## [1.2.3] - 2026-01-01".
-            awk -v hdr="## [$VERSION]" '
+            # Also tolerates a trailing date, e.g. "# [1.2.3] - 2026-01-01".
+            awk -v hdr="# [$VERSION]" '
               index($0, hdr) == 1 { found = 1; next }
               found && index($0, "## ") == 1 { exit }
               found { print }
@@ -77,7 +78,7 @@ jobs:
             sed -i -e '/./,$!d' release-notes.md
             printf '%s\n' "$(cat release-notes.md)" > release-notes.md
             if [ ! -s release-notes.md ]; then
-              echo "::error::No '## [$VERSION]' section with content found in CHANGELOG.md."
+              echo "::error::No '# [$VERSION]' section with content found in CHANGELOG.md."
               exit 1
             fi
             echo "Release notes for $VERSION:"
