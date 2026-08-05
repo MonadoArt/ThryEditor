@@ -32,6 +32,7 @@ namespace Thry.ThryEditor
             {
                 if (_hasAnimatedDescendant == null)
                 {
+                    ResolveDescendantAnimatedStates();
                     _hasAnimatedDescendant = Children.Any(p =>
                         (p is ShaderGroup g && g.HasAnimatedDescendant) ||
                         (p.IsAnimated && !p.IsRenaming));
@@ -46,11 +47,26 @@ namespace Thry.ThryEditor
             {
                 if (_hasRenameAnimatedDescendant == null)
                 {
+                    ResolveDescendantAnimatedStates();
                     _hasRenameAnimatedDescendant = Children.Any(p =>
                         (p is ShaderGroup g && g.HasRenameAnimatedDescendant) ||
                         (p.IsAnimated && p.IsRenaming));
                 }
                 return _hasRenameAnimatedDescendant.Value;
+            }
+        }
+
+        // A property only reads its animated tag the first time it is drawn, and a collapsed group never draws
+        // its children, so their IsAnimated would still be false when the header asks for it. Pull the state
+        // straight from the material tags first so the dots reflect the section's contents whether it is
+        // expanded or not. Resolving is one-time per property, and this runs only on a cache miss.
+        // Done as a separate pass because the Any() below short-circuits and would leave the rest unresolved.
+        private void ResolveDescendantAnimatedStates()
+        {
+            foreach (ShaderPart p in Children)
+            {
+                p.EnsureAnimatedStateResolved();
+                if (p is ShaderGroup g) g.ResolveDescendantAnimatedStates();
             }
         }
 

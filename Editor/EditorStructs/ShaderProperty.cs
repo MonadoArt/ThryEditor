@@ -27,6 +27,7 @@ namespace Thry.ThryEditor
         protected MaterialPropertyDrawer _drawer = null;
 
         bool _needsDrawerInitlization = true;
+        bool _isAnimatedStateResolved = false;
 
         public ShaderProperty(ShaderEditor shaderEditor, string propertyIdentifier, int xOffset, string displayName, string tooltip, int propertyIndex) : base(propertyIdentifier, xOffset, displayName, tooltip, shaderEditor)
         {
@@ -331,8 +332,16 @@ namespace Thry.ThryEditor
             UpdateIsAnimatedFromTag();
         }
 
+        internal override void EnsureAnimatedStateResolved()
+        {
+            if (_isAnimatedStateResolved) return;
+            if (MaterialProperty == null) return;
+            UpdateIsAnimatedFromTag();
+        }
+
         private void UpdateIsAnimatedFromTag()
         {
+            _isAnimatedStateResolved = true;
             // Animatable Stuff
             bool propHasDuplicate = ShaderEditor.Active.GetMaterialProperty(MaterialProperty.name + "_" + ShaderEditor.Active.RenamedPropertySuffix) != null;
             string tag = null;

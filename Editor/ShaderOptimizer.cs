@@ -1951,20 +1951,43 @@ namespace Thry.ThryEditor
             psf.filePath = filePath;
             filesParsed.Add(psf);
 
+            string[] parsedLines;
+            if (!ParseShaderFileLines(filePath, macros, material, stripTextures, filesParsed, isInclude: false, resultLines: out parsedLines))
+                return false;
+
+            psf.lines = parsedLines;
+            return true;
+        }
+
+        /// <summary>
+        /// Parses one shader or include file into the lines that survive optimization.
+        ///
+        /// The top level file and every file it includes are run through this same walk. They used to
+        /// have separate implementations and the include one had drifted badly: it never evaluated
+        /// //KSOEvaluateMacro, never collected #pragma shader_feature into KeywordsUsedByPragmas, and
+        /// never removed disabled #ifdef blocks. Anything moved out of a .shader into an .hlsl silently
+        /// lost all three, which is why the monolithic generated shaders could not be split up.
+        /// </summary>
+        private static bool ParseShaderFileLines(string filePath, List<Macro> macros, Material material,
+            List<string> stripTextures, List<ParsedShaderFile> filesParsed, bool isInclude, out string[] resultLines)
+        {
+            resultLines = null;
+
             // Read file
             string fileContents = null;
+            string what = isInclude ? "Include" : "Shader";
             try
             {
                 using (StreamReader sr = new StreamReader(filePath)) fileContents = sr.ReadToEnd();
             }
             catch (FileNotFoundException e)
             {
-                ThryLogger.LogErr("Shader file " + filePath + " not found.  " + e.ToString());
+                ThryLogger.LogErr(what + " file " + filePath + " not found.  " + e.ToString());
                 return false;
             }
             catch (IOException e)
             {
-                ThryLogger.LogErr("Error reading shader file.  " + e.ToString());
+                ThryLogger.LogErr("Error reading " + what.ToLowerInvariant() + " file.  " + e.ToString());
                 return false;
             }
 
@@ -2235,8 +2258,7 @@ namespace Thry.ThryEditor
                 macros.Add(macro);
             }
 
-            // Save psf lines to list
-            psf.lines = includedLines.ToArray();
+            resultLines = includedLines.ToArray();
             return true;
         }
 

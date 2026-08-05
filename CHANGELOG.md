@@ -1,4 +1,4 @@
-## [2.73.0-beta.1]
+## [2.73.0-beta.2]
 
 **THIS IS A MAJOR UPDATE!**
 
@@ -18,12 +18,18 @@ This also changes the behavior on how Locked Materials are handled, as well as w
   - Unlocking no longer deletes cache-resident shaders, saving greatly on CPU. Installs get cleaned up as users Unlock rather than leaving orphans scattered around. This should effectively make Unlocking twice as faster than before.
   - By default, the cache is capped at 2048 MB. When it reaches the limit, older unused samplers get deleted.
     - *This is configurable in ThryEditor Settings, but change that value at your own risk!*
-  - **CREATORS:** As locked materials now go to `Assets/_LockedShaderCache`, this folder will be auto-generated when locking materials for the first time startin with this version.
+  - **CREATORS:** As locked materials now go to `Assets/_LockedShaderCache`, this folder will be auto-generated when locking materials for the first time starting with this version.
     - *As this folder contains all locked samplers, deleting this folder will require materials to be recompiled. However, it is still advised to ignore it from your exported Avatar assets (as you shouldn't export Avatars with locked materials anyways)!*
     - *A README.txt file is inserted as a reminder about the folder's importance and instructions on how to manage it.*
 - Fixed Inspector Rebuild occurring often in some usage scenarios, especially during Lock/Unlock.
 - Fixed multiple ShaderProperty name collision bugs.
 - The Levenshtein sweep over `GuessShader` function no longer runs constantly and only executes when absolutely needed.
+
+### Changes since beta.1
+- Fixed parser parity.
+- Fixed `A`/`RA` dot indicator on Headers not showing if a collapsed section has a tagged `A`/`RA` in it's context.
+- Fixed dead URL on `Right-Click -> Locking Explanation` context menu option.
+- Added a recovery script that Unlocks materials on the same referenced shader version if the cache goes missing.
 
 ## [2.72.8]
 ### Changes
