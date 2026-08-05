@@ -2,15 +2,13 @@
 
 **THIS IS A MAJOR UPDATE!**
 
-### Shader Optimizer Improvements
+## Shader Optimizer Improvements
 
 This update introduces improvements to our Shader Optimizer pipeline by further improving it's behavior over shared samplers.
 
 For the longest time, Materials that are locked with the same settings share the same Locked hash. However, this has never always been the case. ThryEditor 2.73.0 goes further by making sure this is done more often whenever possible. By doing so, we can eliminate messy variants for each independent material that use the same set of features enabled.
 
 In order to support these new changes, newly-locked materials will now have all their optimized shader files placed centrally in `Assets/_LockedShaderCache`. Please carefully read the Changelog below for info.
-
-**Please, PLEASE report any bugs to us! We greatly appreciate any feedback you have on this!**
 
 ## Changes
 - Overhauled the Shader Optimizer system.
