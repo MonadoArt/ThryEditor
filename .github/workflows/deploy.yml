@@ -69,9 +69,11 @@ jobs:
             fi
             # Literal prefix match, so version dots can't act as regex wildcards.
             # Also tolerates a trailing date, e.g. "# [1.2.3] - 2026-01-01".
+            # Stops at the next "# " heading (the following version). "## "/"### "
+            # subsections inside the entry are part of the notes and must not end it.
             awk -v hdr="# [$VERSION]" '
               index($0, hdr) == 1 { found = 1; next }
-              found && index($0, "## ") == 1 { exit }
+              found && /^# / { exit }
               found { print }
             ' CHANGELOG.md > release-notes.md
             # Trim leading/trailing blank lines.
