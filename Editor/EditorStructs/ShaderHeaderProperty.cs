@@ -26,6 +26,9 @@ namespace Thry.ThryEditor
             }
         }
 
+        // On the rare off-chance the master label is marked as "non-default", ensure it doesn't get a distracting asterisk.
+        public override bool IsPropertyValueDefault => true;
+
         protected override void HandleRightClickToggles(bool isInHeader)
         {
         }
