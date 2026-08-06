@@ -133,6 +133,9 @@ namespace Thry.ThryEditor.Helpers
 
             foreach (PropertyValueAction action in actions)
             {
+                // on_value_actions is public and comes out of shader source, which can hold anything.
+                // So if there is a malformed preset block, null-check it!
+                if (action == null) continue;
                 if (TryParse(action.value, out float value)) values.Add(value);
             }
 

@@ -28,9 +28,13 @@ namespace Thry.ThryEditor
                 (p.GetPropertyType() == ShaderPropertyType.Texture && (p.textureValue != null && p.textureValue.name == value))
             )
             {
-                ;
-                foreach (DefineableAction a in actions)
-                    a.Perform(targets);
+                if (actions != null)
+                {
+                    foreach (DefineableAction a in actions)
+                    {
+                        a.Perform(targets);
+                    }
+                }
                 return true;
             }
             return false;

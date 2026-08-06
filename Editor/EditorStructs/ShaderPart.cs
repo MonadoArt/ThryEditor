@@ -1473,6 +1473,9 @@ namespace Thry.ThryEditor
             if (Options.on_value_actions != null)
                 foreach (PropertyValueAction action in Options.on_value_actions)
                 {
+                    // on_value_actions is public and comes out of shader source, which can hold anything.
+                    // So if there is a malformed preset block, null-check it!
+                    if (action == null) continue;
                     action.Execute(MaterialProperty, targets);
                 }
         }

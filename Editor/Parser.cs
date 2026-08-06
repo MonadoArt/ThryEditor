@@ -367,20 +367,33 @@ namespace Thry.ThryEditor
 
             int depth = 0;
             int variableStart = start;
+
+            // A part only comes back null when it did not parse - a trailing comma, an unbalanced brace leaving a
+            // stray chunk behind. Dropping it here keeps a malformed json from handing callers on an array of holes.
+            void addPart(int partStart, int partEnd)
+            {
+                object part = ParseJsonPart(input, partStart, partEnd, array_obj_type, debugName + "[" + (list.Count) + "]");
+                if (part == null)
+                {
+                    ThryLogger.LogDetail($"ThryParser", $"Skipping unparsable array element '{input.Substring(partStart, partEnd - partStart)}'. (FieldName: {debugName})");
+                    return;
+                }
+                list.Add(part);
+            }
+
             for (int i = start; i < end; i++)
             {
-                if(depth == 0 && input[i] == ',' && (i == 0 || input[i - 1] != '\\'))
+                if (depth == 0 && input[i] == ',' && (i == 0 || input[i - 1] != '\\'))
                 {
-                    list.Add(ParseJsonPart(input, variableStart, i, array_obj_type, debugName + "[" + (list.Count) + "]"));
+                    addPart(variableStart, i);
                     variableStart = i + 1;
-                }else if(i == end - 1)
-                {
-                    list.Add(ParseJsonPart(input, variableStart, i + 1, array_obj_type, debugName + "[" + (list.Count) + "]"));
                 }
-                else if (input[i] == '{' || input[i] == '[')
-                    depth++;
-                else if (input[i] == '}' || input[i] == ']')
-                    depth--;
+                else if(i == end - 1)
+                {
+                    addPart(variableStart, i + 1);
+                }
+                else if (input[i] == '{' || input[i] == '[') depth++;
+                else if (input[i] == '}' || input[i] == ']') depth--;
             }
             return list;
         }
