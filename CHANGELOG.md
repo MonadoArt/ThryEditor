@@ -1,3 +1,8 @@
+# [2.73.1]
+## Changes
+- Fixed a nasty null element found when running `PropertyValueAction`, which mainly affected 9.3 and older shaders.
+- Fixed a rare bug where the `shader_master_label` would get an asterisk* for some weird reason.
+
 # [2.73.0]
 
 **THIS IS A MAJOR UPDATE!**
