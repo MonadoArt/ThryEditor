@@ -476,7 +476,6 @@ namespace Thry
                         _shaderHeader = new ShaderHeaderProperty(this, props[i], displayName, 0, optionsRaw, false, i);
                         break;
                     case ThryPropertyType.footer:
-                    _footers.Add(new FooterButton(Parser.Deserialize<ButtonData>(displayName)));
                     {
                         // Null here means the display name was not a {...} ButtonData, which is how
                         // pre-JSON shaders declare footers. See LegacyPoiyomiFooters for the fallback.

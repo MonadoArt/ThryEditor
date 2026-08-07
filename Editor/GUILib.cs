@@ -1058,7 +1058,7 @@ namespace Thry.ThryEditor
         public void DrawAt(Rect rect)
         {
             if (GUI.Button(rect, content, isTextureContent ? GUIStyle.none : GUI.skin.button))
-                data.action.Perform(ShaderEditor.Active?.Materials);
+                data?.action?.Perform(ShaderEditor.Active?.Materials);
             EditorGUIUtility.AddCursorRect(rect, MouseCursor.Link);
         }
 
