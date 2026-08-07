@@ -365,7 +365,30 @@ namespace Thry
             }
         }
 
-        //finds all properties and headers and stores them in correct order
+        // finds all properties and headers and stores them in correct order
+        /// <summary>
+        /// Footer definitions for Poiyomi shaders that predate the JSON footer format.
+        ///
+        /// 7.3 and older declare a footer as a plain label - footer_youtube ("youtube footer button",
+        /// Float) - which carries no url and no icon, so ButtonData deserializes to null and the button
+        /// renders as a dead 42px slot. These are Poiyomi's watermark and are meant to be visible, so
+        /// they are rebuilt here from the definitions the current shaders ship, rather than dropped.
+        ///
+        /// Applied only to Poiyomi shaders on purpose: footer_discord and friends are generic
+        /// ThryEditor property names that any shader can declare, and a third party shader's footer
+        /// must never be silently pointed at Poiyomi's socials.
+        /// </summary>
+        private static readonly Dictionary<string, string> LegacyPoiyomiFooters = new Dictionary<string, string>()
+        {
+            { "footer_youtube", "{texture:{name:icon-youtube,height:24},action:{type:URL,data:https://www.youtube.com/poiyomi},hover:YOUTUBE}" },
+            { "footer_twitter", "{texture:{name:icon-twitter,height:24},action:{type:URL,data:https://x.com/poiyomi},hover:X}" },
+            { "footer_patreon", "{texture:{name:icon-patreon-new,height:24},action:{type:URL,data:https://www.patreon.com/poiyomi},hover:PATREON}" },
+            { "footer_discord", "{texture:{name:icon-discord,height:24},action:{type:URL,data:https://discord.gg/poiyomi},hover:DISCORD}" },
+            { "footer_github", "{texture:{name:icon-github,height:24},action:{type:URL,data:https://github.com/poiyomi/PoiyomiToonShader},hover:GITHUB}" },
+        };
+
+        // Matches both the shader itself (".poiyomi/...") and its locked copy ("Hidden/Locked/.poiyomi/...")
+        private bool IsPoiyomiShader => Shader != null && Shader.name.Contains(".poiyomi/");
         private void CollectAllProperties()
         {
             if (ShaderOptimizer.IsShaderUsingThryOptimizer(Shader))
@@ -453,8 +476,19 @@ namespace Thry
                         _shaderHeader = new ShaderHeaderProperty(this, props[i], displayName, 0, optionsRaw, false, i);
                         break;
                     case ThryPropertyType.footer:
-                        _footers.Add(new FooterButton(Parser.Deserialize<ButtonData>(displayName)));
+                    _footers.Add(new FooterButton(Parser.Deserialize<ButtonData>(displayName)));
+                    {
+                        // Null here means the display name was not a {...} ButtonData, which is how
+                        // pre-JSON shaders declare footers. See LegacyPoiyomiFooters for the fallback.
+                        ButtonData footerData = Parser.Deserialize<ButtonData>(displayName);
+                        if (footerData == null && IsPoiyomiShader
+                            && LegacyPoiyomiFooters.TryGetValue(props[i].name, out string legacyFooter))
+                            footerData = Parser.Deserialize<ButtonData>(legacyFooter);
+                        // A footer with no data is a dead slot that throws the moment it is clicked
+                        if (footerData != null)
+                            _footers.Add(new FooterButton(footerData));
                         break;
+                    }
                     case ThryPropertyType.hidden_property:
                     case ThryPropertyType.shown_property:
 #if UNITY_6000_2_OR_NEWER

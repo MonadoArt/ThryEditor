@@ -1040,7 +1040,7 @@ namespace Thry.ThryEditor
             if (isTextureContent)
             {
                 if(GUILayout.Button(content, new GUIStyle(), GUILayout.MaxWidth(_textureWidth), GUILayout.Height(_buttonHeight))){
-                    data.action.Perform(ShaderEditor.Active?.Materials);
+                    data?.action?.Perform(ShaderEditor.Active?.Materials);
                 }
                 cursorRect = GUILayoutUtility.GetLastRect();
                 GUILayout.Space(8);
@@ -1048,7 +1048,7 @@ namespace Thry.ThryEditor
             else
             {
                 if (GUILayout.Button(content, GUILayout.ExpandWidth(false), GUILayout.Height(_buttonHeight)))
-                    data.action.Perform(ShaderEditor.Active?.Materials);
+                    data?.action?.Perform(ShaderEditor.Active?.Materials);
                 cursorRect = GUILayoutUtility.GetLastRect();
                 GUILayout.Space(2);
             }

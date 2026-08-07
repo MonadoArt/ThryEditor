@@ -1,5 +1,6 @@
 # [2.73.2]
 - Fixed inlinedincludes for shaders that use it (very rare).
+- Fixed some GUI issues if this version is being used on very... very old legacy shaders.
 
 # [2.73.1]
 ## Changes
