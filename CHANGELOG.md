@@ -1,3 +1,6 @@
+# [2.73.2]
+- Fixed inlinedincludes for shaders that use it (very rare).
+
 # [2.73.1]
 ## Changes
 - Fixed a nasty null element found when running `PropertyValueAction`, which mainly affected 9.3 and older shaders.

@@ -2282,14 +2282,26 @@ namespace Thry.ThryEditor
         {
             // Infinite recursion check
             if (alreadyProcessed.Exists(x => x.filePath == filePath))
-                return new string[0]; // Already included, return empty to avoid duplicates
+                return new string[0];
 
-            // Mark as processed to prevent infinite recursion
+            // Mark as open for the duration of this file's own includes, just in case.
             ParsedShaderFile marker = new ParsedShaderFile();
             marker.filePath = filePath;
             marker.lines = new string[0]; // Empty - we're inlining, not writing separately
             alreadyProcessed.Add(marker);
+            try
+            {
+                return ReadInlinedIncludeLines(filePath, macros, material, stripTextures, alreadyProcessed);
+            }
+            finally
+            {
+                // Closed again: the next #include of this file, here or in a later pass, re-inlines it
+                alreadyProcessed.Remove(marker);
+            }
+        }
 
+        private static string[] ReadInlinedIncludeLines(string filePath, List<Macro> macros, Material material, List<string> stripTextures, List<ParsedShaderFile> alreadyProcessed)
+        {
             string fileContents = null;
             try
             {
