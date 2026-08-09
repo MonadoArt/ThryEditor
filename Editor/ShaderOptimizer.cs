@@ -2989,11 +2989,11 @@ namespace Thry.ThryEditor
             if (material == null) return null;
 
             // Check for original shader by GUID
-            Shader originalShader = GetOriginalShaderByGUID(material);
+            Shader originalShader = GetOriginalShaderByGUID(material, log);
             if (originalShader != null) return originalShader;
 
             // Check for original shader by exact name
-            originalShader = GetOriginalShaderByName(material);
+            originalShader = GetOriginalShaderByName(material, log);
             if (originalShader != null) return originalShader;
 
             // Nothing to go by.

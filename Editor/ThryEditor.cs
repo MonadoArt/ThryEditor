@@ -1373,7 +1373,7 @@ namespace Thry
         [MenuItem("Thry/Material Lock Manager", priority = 3)]
         static void MenuShaderOptUnlockedMaterials()
         {
-            EditorWindow.GetWindow<UnlockedMaterialsList>(false, "Materials", true);
+            EditorWindow.GetWindow<UnlockedMaterialsList>(false, "Material Lock Manager", true);
         }
 
         [MenuItem("Thry/ThryEditor/Settings",priority = 4)]

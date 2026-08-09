@@ -1,3 +1,16 @@
+# [2.73.4]
+## Changes
+- **Refreshed the Material Lock Manager**
+  - New Toolbar, allowing the ability to Group, Filter, and Search for Materials directly in the UI.
+    - Grouping: Sort the list by Shader, Folder, and Prefab/Scene.
+    - Filter: Sort the list by Materials that are Locked, Unlocked, or ones that Need Attention.
+    - Search Bar: Shows only Materials that match the typed-in keyword.
+    - By default, the utility filters through the `Project/Assets` folder. Enabling `Packages` will expand the list to include found materials inside the `Project/Packages` directory.
+  - Window Title now matches the actual script function.
+  - Fixed and issue where the list and GUI are computed every frame. It is now computed once per rebuild, saving greatly on CPU.
+  - Fixed an issue where script compiling triggered a full project re-scan.
+- Fixed an issue where `GetRoot()` re-read `mat.GetParent()` every iteration, causing deep variant chains resolving to the wrong materials.
+
 # [2.73.3]
 - Fixed leftover call on GUI.
 

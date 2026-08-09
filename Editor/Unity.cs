@@ -255,13 +255,18 @@ namespace Thry.ThryEditor
 
         public static Material GetRoot(this Material mat)
         {
-            Material lastParent = mat, parent;
-            while ((parent = mat.GetParent()) != null && parent != lastParent)
+            if (mat == null) return null;
+
+            Material root = mat;
+            Material parent;
+            // Bounded so a cyclic parent chain (which Unity should not produce, but a hand-edited
+            // asset can) cannot hang the editor.
+            for (int depth = 0; depth < 256 && (parent = root.GetParent()) != null && parent != root; depth++)
             {
-                lastParent = parent;
+                root = parent;
             }
 
-            return lastParent;
+            return root;
         }
 
         /// <summary>
