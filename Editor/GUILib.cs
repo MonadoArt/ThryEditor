@@ -154,6 +154,78 @@ namespace Thry.ThryEditor
             return 0;
         }
 
+        public static float GetSliderFoldoutHeight(bool isExpanded, float expandedContentHeight)
+        {
+            return EditorGUIUtility.singleLineHeight + (isExpanded ? expandedContentHeight : 0f);
+        }
+
+        /// <summary>
+        /// An int slider with a foldout arrow that reveals caller-supplied content beneath it.
+        /// The foldout chrome — indent, arrow, click handling and background — is shared;
+        /// <paramref name="extraFoldoutGUI"/> draws whatever belongs in the expanded body.
+        /// The caller owns <paramref name="isExpanded"/> and must know
+        /// <paramref name="expandedContentHeight"/> up front, since the background is sized to it.
+        /// </summary>
+        public static void SliderFoldout(
+            Rect position,
+            MaterialProperty prop,
+            GUIContent label,
+            ref bool isExpanded,
+            float expandedContentHeight,
+            Action<Rect> extraFoldoutGUI = null)
+        {
+            const float foldoutIndent = 12f;
+            const float arrowOffset = 3f;
+
+            float lineHeight = EditorGUIUtility.singleLineHeight;
+
+            // The label/slider row itself is never filled — only the expanded body gets a
+            // background, matching SmallTextureProperty. The solid Colors.backgroundDark
+            // treatment belongs to the large dropdown widgets (Gradient, RGBAPacker).
+            if (isExpanded)
+            {
+                Rect expandedBackgroundRect = new Rect(position.x, position.y + lineHeight, position.width, expandedContentHeight);
+                EditorGUI.DrawRect(expandedBackgroundRect, Colors.expandedFoldoutBackground);
+            }
+
+            Rect arrowRect = new Rect(position.x - arrowOffset, position.y, lineHeight, lineHeight);
+            // GUI.Button sets GUI.changed, and ShaderProperty wraps drawer OnGUI in a BeginChangeCheck,
+            // so an unguarded foldout click gets misread as a property edit.
+            bool changedBeforeFoldoutHitbox = GUI.changed;
+            if (GUI.Button(arrowRect, "", GUIStyle.none))
+            {
+            }
+            GUI.changed = changedBeforeFoldoutHitbox;
+
+            if (Event.current.type == EventType.Repaint)
+                EditorStyles.foldout.Draw(arrowRect, false, false, isExpanded, false);
+
+            Rect sliderRect = new Rect(position.x + foldoutIndent, position.y, position.width - foldoutIndent, lineHeight);
+            Vector2 range = prop.rangeLimits;
+            EditorGUI.BeginChangeCheck();
+            // Reset is deliberate: this OnGUI can draw more controls after this one.
+            EditorGUI.showMixedValue = prop.hasMixedValue;
+            int value = EditorGUI.IntSlider(sliderRect, label, (int)prop.GetNumber(), (int)range.x, (int)range.y);
+            EditorGUI.showMixedValue = false;
+            if (EditorGUI.EndChangeCheck())
+                prop.SetNumber(value);
+
+            // Only the arrow column toggles the foldout. Claiming the whole label
+            // would break dragging the slider's label to scrub the value.
+            Rect foldoutClickRect = new Rect(position.x - arrowOffset, position.y, foldoutIndent + arrowOffset, lineHeight);
+            if (ShaderEditor.Input.LeftClick_IgnoreLockedAndUnityUses && foldoutClickRect.Contains(Event.current.mousePosition))
+            {
+                ShaderEditor.Input.Use();
+                isExpanded = !isExpanded;
+            }
+
+            if (isExpanded)
+            {
+                Rect contentRect = new Rect(position.x + foldoutIndent, position.y + lineHeight, position.width - foldoutIndent, expandedContentHeight);
+                extraFoldoutGUI?.Invoke(contentRect);
+            }
+        }
+
         public static void SmallTextureProperty(Rect position, MaterialProperty prop, GUIContent label, MaterialEditor editor, bool hasFoldoutProperties, Action extraFoldoutGUI = null)
         {
             // Border Code start

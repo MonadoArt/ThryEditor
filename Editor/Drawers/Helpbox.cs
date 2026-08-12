@@ -5,7 +5,7 @@ namespace Thry.ThryEditor.Drawers
 {
 	// [Helpbox(messageType)] - Standard helpbox
 	// [Helpbox(messageType, minLines)] - Minimum height in lines
-	// [Helpbox(messageType, minLines, iconType)] - 0=help (default), 1=thryEditor_Help, 2=thryEditor_Warning, 3=thryEditor_Danger; falls back to help
+	// [Helpbox(messageType, minLines, iconType)] - 0=help (default), 1=thryEditor_Help, 2=thryEditor_Warning, 3=thryEditor_Danger, 4=thryEditor_Pass, 5=thryEditor_Fail; falls back to help
 	public class HelpboxDrawer : MaterialPropertyDrawer
 	{
 		readonly MessageType type;
@@ -19,6 +19,8 @@ namespace Thry.ThryEditor.Drawers
 			"thryEditor_Help",    // 1
 			"thryEditor_Warning", // 2
 			"thryEditor_Danger",  // 3
+			"thryEditor_Pass",    // 4
+			"thryEditor_Fail"     // 5
 		};
 
 		public HelpboxDrawer()
