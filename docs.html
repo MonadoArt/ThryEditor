@@ -207,9 +207,39 @@
                 </tr>
                 <tr>
                     <td>[Helpbox]</td>
-                    <td>Creates an info box</td>
+                    <td>
+                        Creates an info box
+                    </td>
                     <td></td>
-                    <td>[Helpbox]_MainHelpbox("This is the text inside the info box",Float)= 0</td>
+                    <td>[Helpbox]_MainHelpbox("This is the text inside the info box",Float)= 0<br />[Helpbox(1, 0, 4)]_PassBox("The stencil check would have passed",Int)= 0</td>
+                </tr>
+                <tr>
+                    <td>[ByteSlider]</td>
+                    <td>Creates a 0-255 slider with a foldout revealing the individual bits</td>
+                    <td></td>
+                    <td>[ByteSlider]_StencilRef("Stencil Reference Value",Range(0,255))= 0</td>
+                </tr>
+                <tr>
+                    <td>[ByteBitField]</td>
+                    <td>Creates a row of 8 toggles for the individual bits of a 0-255 value</td>
+                    <td></td>
+                    <td>[ByteBitField]_StencilReadMask("Stencil ReadMask Value",Range(0,255))= 255</td>
+                </tr>
+                <tr>
+                    <td>[ThryStencilCalculator]</td>
+                    <td>Simulates the stencil test and shows the resulting buffer value as an editable bit grid.
+                        <br />Reads _StencilBufferValue, _StencilRef, _StencilReadMask, _StencilWriteMask, _StencilCompareFunction, _StencilPassOp, _StencilFailOp, _StencilZFailOp, _StencilCheckResult and _StencilIsOccluded.
+                        <br />Pass Front or Back to insert that word after _Stencil for the compare function, the three ops and the check result, e.g. _StencilBackCompareFunction. The other five keep their default names.
+                        <br />All ten names can be passed explicitly instead, in the order listed above. A name that matches no property is ignored and reads as its default, so check the spelling if the simulation looks wrong.</td>
+                    <td></td>
+                    <td>[ThryStencilCalculator]<br />_StencilCheckResult("",Float)= 0<br /><br />[ThryStencilCalculator(Back)]<br />_StencilBackCheckResult("",Float)= 0</td>
+                </tr>
+                <tr>
+                    <td>[ThryStencilSummary]</td>
+                    <td>Shows the stencil test as a decision flow and which operation its outcome selects.
+                        <br />Reads the same ten properties as [ThryStencilCalculator], and takes the same Front, Back and explicit-name forms.</td>
+                    <td></td>
+                    <td>[ThryStencilSummary]<br />[ToggleUI(true)]_StencilIsOccluded("Simulate ZFail",Float)= 0</td>
                 </tr>
             </table>
 
