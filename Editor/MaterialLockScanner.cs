@@ -34,6 +34,8 @@ namespace Thry.ThryEditor
     public enum MaterialLockFilter
     {
         All,
+        /// <summary>Everything, but split into a locked and an unlocked section.</summary>
+        [InspectorName("All (Split)")] AllSplit,
         Unlocked,
         Locked,
         [InspectorName("Needs Attention")] NeedsAttention
@@ -94,6 +96,15 @@ namespace Thry.ThryEditor
 
         /// <summary>Collects materials that cannot be acted on normally, and sorts to the top.</summary>
         public bool IsAttentionGroup;
+
+        /// <summary>
+        /// Band this group belongs under ("Locked" / "Unlocked"), or null when the view is not split.
+        /// A band is drawn above the first group of each run.
+        /// </summary>
+        public string Section;
+
+        /// <summary>Distinct materials in this group's section, for the band's own count.</summary>
+        public int SectionCount;
 
         public readonly List<MaterialLockEntry> Entries = new List<MaterialLockEntry>();
 
@@ -318,20 +329,56 @@ namespace Thry.ThryEditor
 
         #region Grouping
 
-        public static List<MaterialLockGroup> Group(IEnumerable<MaterialLockEntry> entries, MaterialLockGrouping grouping, bool includePackages)
+        public static List<MaterialLockGroup> Group(IEnumerable<MaterialLockEntry> entries, MaterialLockGrouping grouping, bool includePackages, bool splitByLockState = false)
         {
             List<MaterialLockGroup> groups;
-            switch (grouping)
+
+            if (splitByLockState)
             {
-                case MaterialLockGrouping.Folder: groups = GroupByFolder(entries); break;
-                case MaterialLockGrouping.PrefabAndScene: groups = GroupByPrefabAndScene(entries, includePackages); break;
-                default: groups = GroupByShader(entries); break;
+                List<MaterialLockEntry> all = entries as List<MaterialLockEntry> ?? entries.ToList();
+
+                // Orphaned materials are locked ones whose shader went missing, so they belong to
+                // the locked section rather than a third pile.
+                groups = BuildSection(all.Where(e => e.State != MaterialLockState.Unlocked), grouping, includePackages, "Locked");
+                groups.AddRange(BuildSection(all.Where(e => e.State == MaterialLockState.Unlocked), grouping, includePackages, "Unlocked"));
+            }
+            else
+            {
+                groups = BuildGroups(entries, grouping, includePackages);
             }
 
             foreach (MaterialLockGroup group in groups)
             {
                 group.LockableTargets = CountDistinctTargets(group.Entries, true);
                 group.UnlockableTargets = CountDistinctTargets(group.Entries, false);
+            }
+
+            return groups;
+        }
+
+        static List<MaterialLockGroup> BuildGroups(IEnumerable<MaterialLockEntry> entries, MaterialLockGrouping grouping, bool includePackages)
+        {
+            switch (grouping)
+            {
+                case MaterialLockGrouping.Folder: return GroupByFolder(entries);
+                case MaterialLockGrouping.PrefabAndScene: return GroupByPrefabAndScene(entries, includePackages);
+                default: return GroupByShader(entries);
+            }
+        }
+
+        static List<MaterialLockGroup> BuildSection(IEnumerable<MaterialLockEntry> entries, MaterialLockGrouping grouping, bool includePackages, string section)
+        {
+            List<MaterialLockEntry> materialised = entries.ToList();
+            List<MaterialLockGroup> groups = BuildGroups(materialised, grouping, includePackages);
+
+            foreach (MaterialLockGroup group in groups)
+            {
+                group.Section = section;
+                group.SectionCount = materialised.Count;
+
+                // The same shader or folder appears in both sections, so the keys have to be
+                // distinct or the two would share one foldout.
+                group.Key = section + "/" + group.Key;
             }
 
             return groups;

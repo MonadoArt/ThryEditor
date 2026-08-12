@@ -29,6 +29,7 @@ namespace Thry.ThryEditor
         const float NoticeHeight = 30f;
         const float FooterHeight = 26f;
 
+        const float SectionHeaderHeight = 26f;
         const float GroupHeaderHeight = 24f;
         const float GroupSpacing = 4f;
         const float RowHeight = 20f;
@@ -87,6 +88,9 @@ namespace Thry.ThryEditor
             // ObjectContent always resolves, unlike a named built-in icon that can differ between versions.
             titleContent = new GUIContent("Material Lock Manager", EditorGUIUtility.ObjectContent(null, typeof(Material)).image);
             minSize = new Vector2(560, 260);
+
+            // Before the first scan: the packages preference decides its scope.
+            LoadPreferences();
             _needsViewRebuild = true;
 
             // The version counter is static and so restarts at zero on a domain reload, while the
@@ -189,7 +193,7 @@ namespace Thry.ThryEditor
                 .Where(e => MaterialLockScanner.PassesFilter(e, _filter))
                 .Where(e => MaterialLockScanner.MatchesSearch(e, _search));
 
-            _groups = MaterialLockScanner.Group(visible, _grouping, _includePackages);
+            _groups = MaterialLockScanner.Group(visible, _grouping, _includePackages, _filter == MaterialLockFilter.AllSplit);
 
             // Counted here, not per frame. In prefab grouping a material appears under every prefab
             // using it, so the totals must be taken over distinct materials.
@@ -322,16 +326,18 @@ namespace Thry.ThryEditor
                 // Rebuilt from Update, because the prefab grouping walks every prefab's dependencies
                 // behind a progress bar and that has no business running inside OnGUI.
                 _needsViewRebuild = true;
+                SavePreferences();
             }
             x += grouping.width + 2;
 
-            Rect filter = new Rect(x, y, 122, ToolbarHeight);
+            Rect filter = new Rect(x, y, 130, ToolbarHeight);
             EditorGUI.BeginChangeCheck();
             MaterialLockFilter newFilter = (MaterialLockFilter)EditorGUI.EnumPopup(filter, _filter, EditorStyles.toolbarPopup);
             if (EditorGUI.EndChangeCheck())
             {
                 _filter = newFilter;
                 _needsViewRebuild = true;
+                SavePreferences();
             }
             x += filter.width + 2;
 
@@ -346,6 +352,7 @@ namespace Thry.ThryEditor
             {
                 _includePackages = newIncludePackages;
                 _pendingRescan = true;
+                SavePreferences();
             }
 
             Rect search = new Rect(x, y + 2, Mathf.Max(60, packages.x - 4 - x), ToolbarHeight - 4);
@@ -420,9 +427,14 @@ namespace Thry.ThryEditor
             }
 
             // Computed rather than measured, so scrolling and row skipping need no layout pass.
+            // Must stay in step with the draw loop below, including where section bands fall.
             float contentHeight = 0;
+            string heightSection = null;
             for (int i = 0; i < _groups.Count; i++)
             {
+                if (StartsSection(_groups[i], heightSection)) contentHeight += SectionHeaderHeight;
+                heightSection = _groups[i].Section;
+
                 contentHeight += GroupHeaderHeight + GroupSpacing;
                 if (IsExpanded(_groups[i].Key)) contentHeight += _groups[i].Entries.Count * RowHeight;
             }
@@ -439,8 +451,17 @@ namespace Thry.ThryEditor
             }
 
             float y = 0;
+            string section = null;
             foreach (MaterialLockGroup group in _groups)
             {
+                if (StartsSection(group, section))
+                {
+                    Rect band = new Rect(0, y, contentWidth, SectionHeaderHeight);
+                    if (IsVisible(band.y, band.height)) DrawSectionHeader(band, group);
+                    y += SectionHeaderHeight;
+                }
+                section = group.Section;
+
                 Rect header = new Rect(0, y, contentWidth, GroupHeaderHeight);
                 if (IsVisible(header.y, header.height)) DrawGroupHeader(header, group);
                 y += GroupHeaderHeight;
@@ -466,6 +487,26 @@ namespace Thry.ThryEditor
         bool IsVisible(float y, float height)
         {
             return y + height >= _visibleMin && y <= _visibleMax;
+        }
+
+        /// <summary>
+        /// True for the first group of each run of a section. Pure function of the group list, so the
+        /// height pass and the draw pass always agree on where the bands go.
+        /// </summary>
+        static bool StartsSection(MaterialLockGroup group, string previousSection)
+        {
+            return group.Section != null && group.Section != previousSection;
+        }
+
+        void DrawSectionHeader(Rect r, MaterialLockGroup group)
+        {
+            EditorGUI.DrawRect(r, SectionBackground);
+
+            // A rule along the bottom, so the band reads as a divider and not another group header.
+            EditorGUI.DrawRect(new Rect(r.x, r.yMax - 1, r.width, 1), SectionRule);
+
+            Rect label = new Rect(r.x + EdgePadding + 2, r.y, r.width - EdgePadding * 2, r.height);
+            GUI.Label(label, $"{group.Section}  ({group.SectionCount})", EditorStyles.boldLabel);
         }
 
         string EmptyMessage()
@@ -716,6 +757,60 @@ namespace Thry.ThryEditor
         static Color RowAlternate
         {
             get { return EditorGUIUtility.isProSkin ? new Color(1f, 1f, 1f, 0.025f) : new Color(0f, 0f, 0f, 0.03f); }
+        }
+
+        static Color SectionBackground
+        {
+            get { return EditorGUIUtility.isProSkin ? new Color(0.17f, 0.17f, 0.17f) : new Color(0.68f, 0.68f, 0.68f); }
+        }
+
+        static Color SectionRule
+        {
+            get { return EditorGUIUtility.isProSkin ? new Color(0f, 0f, 0f, 0.5f) : new Color(0f, 0f, 0f, 0.25f); }
+        }
+
+        #endregion
+
+        #region Preferences
+
+        // Kept in the project's Thry/persistent_data file rather than EditorPrefs, so the choices
+        // follow the project instead of the machine - a locking layout that suits an avatar project
+        // is rarely the one you want in a world project.
+        const string PrefGrouping = "MaterialLockManager.Grouping";
+        const string PrefFilter = "MaterialLockManager.Filter";
+        const string PrefIncludePackages = "MaterialLockManager.IncludePackages";
+
+        void LoadPreferences()
+        {
+            _grouping = ReadEnum(PrefGrouping, _grouping);
+            _filter = ReadEnum(PrefFilter, _filter);
+
+            string packages = PersistentData.Get(PrefIncludePackages);
+            if (!string.IsNullOrEmpty(packages)) _includePackages = packages == "1";
+        }
+
+        void SavePreferences()
+        {
+            PersistentData.Set(PrefGrouping, _grouping.ToString());
+            PersistentData.Set(PrefFilter, _filter.ToString());
+            PersistentData.Set(PrefIncludePackages, _includePackages ? "1" : "0");
+        }
+
+        /// <summary>
+        /// Enums are stored by name, not by ordinal: the values are ordered to read well in the
+        /// dropdown, and inserting one there must not silently change what somebody had selected.
+        /// Anything unrecognised - written by a newer version, or since renamed - falls back.
+        /// </summary>
+        static T ReadEnum<T>(string key, T fallback) where T : struct
+        {
+            string raw = PersistentData.Get(key);
+            if (string.IsNullOrEmpty(raw)) return fallback;
+
+            T parsed;
+            if (!Enum.TryParse(raw, out parsed)) return fallback;
+
+            // TryParse also accepts bare numbers and undefined combinations.
+            return Enum.IsDefined(typeof(T), parsed) ? parsed : fallback;
         }
 
         #endregion
