@@ -11,7 +11,7 @@
 - Added `[GUILib.SliderFoldout]`, a reusable slider-with-foldout row for use by other drawers.
 
 ## Changes
-- Material Lock Manager now uses persistence in the Material Lock Manager. Whichever sorting options you last used will be the same upon re-opening the panel.
+- Material Lock Manager now uses persistence in the sorting options. Whichever sorting options you last used will be the same upon re-opening the panel.
 - Updated sorting options in Material Lock Manager with `All (Split)` sorting option, which should feel similar to the old Material Lock Manager.
 
 # [2.73.4]
