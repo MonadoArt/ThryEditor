@@ -9,6 +9,7 @@
 - Added `[ByteSlider]`. Similar to `[IntRange]`, this slider includes a foldout revealing the individual bits.
 - Added `[ByteBitField]`, a row of 8 toggles for editing the bits of a 0-255 value.
 - Added `[GUILib.SliderFoldout]`, a reusable slider-with-foldout row for use by other drawers.
+- Shader Developers: The example shader Thry/Example 3 demonstrates the Stencil Calculator's implementation technique.
 
 ## Changes
 - Material Lock Manager now uses persistence in the sorting options. Whichever sorting options you last used will be the same upon re-opening the panel.
