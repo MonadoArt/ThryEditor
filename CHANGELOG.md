@@ -1,3 +1,19 @@
+# [2.73.5]
+## Added
+- **Added Stencil Calculator**, contributed by MonadoArt.
+  - New `[ThryStencilCalculator]` decorator that simulates the stencil test in the Inspector and shows the resulting buffer value as an editable bit grid.
+  - Reference Value, Read Mask, and Write Mask can be edited bit by bit, with masked bits dimmed so it is clear which ones the test actually reads.
+  - New `[ThryStencilSummary]` decorator that draws the same test as a decision flow, showing which of the Pass, ZFail, and Fail operations the outcome selects.
+  - Added a `Simulate ZFail` toggle so the depth-fail case can be previewed alongside Pass and Fail.
+  - Can be implemented to separate `Front` and `Back` stencils, e.g. `[ThryStencilCalculator(Back)]`.
+- Added `[ByteSlider]`. Similar to `[IntRange]`, this slider includes a foldout revealing the individual bits.
+- Added `[ByteBitField]`, a row of 8 toggles for editing the bits of a 0-255 value.
+- Added `[GUILib.SliderFoldout]`, a reusable slider-with-foldout row for use by other drawers.
+
+## Changes
+- Material Lock Manager now uses persistence in the Material Lock Manager. Whichever sorting options you last used will be the same upon re-opening the panel.
+- Updated sorting options in Material Lock Manager with `All (Split)` sorting option, which should feel similar to the old Material Lock Manager.
+
 # [2.73.4]
 ## Changes
 - **Refreshed the Material Lock Manager**
@@ -7,7 +23,7 @@
     - Search Bar: Shows only Materials that match the typed-in keyword.
     - By default, the utility filters through the `Project/Assets` folder. Enabling `Packages` will expand the list to include found materials inside the `Project/Packages` directory.
   - Window Title now matches the actual script function.
-  - Fixed and issue where the list and GUI are computed every frame. It is now computed once per rebuild, saving greatly on CPU.
+  - Fixed an issue where the list and GUI are computed every frame. It is now computed once per rebuild, saving greatly on CPU.
   - Fixed an issue where script compiling triggered a full project re-scan.
 - Fixed an issue where `GetRoot()` re-read `mat.GetParent()` every iteration, causing deep variant chains resolving to the wrong materials.
 
