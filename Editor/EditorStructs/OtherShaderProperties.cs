@@ -3,6 +3,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Thry.ThryEditor.Helpers;
 
 namespace Thry.ThryEditor
 {
@@ -36,17 +37,21 @@ namespace Thry.ThryEditor
                 
                 EditorGUI.LabelField(labelRect, "Render Queue");
                 
-                // Dropdown for preset queues
-                int selectedIndex = System.Array.FindIndex(s_renderQueueValues, v => v == queue);
-                if (selectedIndex < 0) selectedIndex = 0; // Custom value, show "From Shader"
+                // Dropdown for preset queues. A custom value adds a display only trailing entry,
+                // so an index past the preset count must not be written back.
+                int selectedIndex;
+                string[] queueNames = RenderQueueHelper.GetDropdownNames(queue, s_renderQueueNames, s_renderQueueValues, out selectedIndex);
                 
                 EditorGUI.BeginChangeCheck();
-                int newIndex = EditorGUI.Popup(dropdownRect, selectedIndex, s_renderQueueNames);
-                if (EditorGUI.EndChangeCheck() && newIndex != selectedIndex)
+                int newIndex = EditorGUI.Popup(dropdownRect, selectedIndex, queueNames);
+                if (EditorGUI.EndChangeCheck() && newIndex != selectedIndex && newIndex < s_renderQueueValues.Length)
                 {
                     queue = s_renderQueueValues[newIndex];
                     foreach (Material m in MyShaderUI.Materials)
                         m.renderQueue = queue;
+                    // -1 is a write-only sentinel meaning "use the shader's Queue tag". Read the
+                    // material back so the int field below shows the resolved queue, not -1.
+                    queue = MyShaderUI.Materials[0].renderQueue;
                 }
                 
                 // Int field for exact value
