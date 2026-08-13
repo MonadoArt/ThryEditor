@@ -49,9 +49,6 @@ namespace Thry.ThryEditor
                     queue = s_renderQueueValues[newIndex];
                     foreach (Material m in MyShaderUI.Materials)
                         m.renderQueue = queue;
-                    // -1 is a write-only sentinel meaning "use the shader's Queue tag". Read the
-                    // material back so the int field below shows the resolved queue, not -1.
-                    queue = MyShaderUI.Materials[0].renderQueue;
                 }
                 
                 // Int field for exact value
