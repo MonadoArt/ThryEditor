@@ -204,6 +204,88 @@ namespace Thry.ThryEditor
 			}
 		}
 
+		// Built from boldLabel, not label + FontStyle.Bold: the editor font has no bold face for
+		// Unity to synthesise from, so setting fontStyle on a label style silently does nothing.
+		// Same reason ThryHeaderLabel, ThryHeader and ThryRichLabel all derive from boldLabel.
+		private static GUIStyle _stencilBitDigit;
+		public static GUIStyle stencilBitDigit
+		{
+			get
+			{
+				if (_stencilBitDigit == null)
+					_stencilBitDigit = MakeBitLabelStyle(9);
+				return _stencilBitDigit;
+			}
+		}
+
+		private static GUIStyle _stencilBitSymbol;
+		public static GUIStyle stencilBitSymbol
+		{
+			get
+			{
+				if (_stencilBitSymbol == null)
+					_stencilBitSymbol = MakeBitLabelStyle(12);
+				return _stencilBitSymbol;
+			}
+		}
+
+		private static GUIStyle MakeBitLabelStyle(int fontSize)
+		{
+			GUIStyle style = new GUIStyle(EditorStyles.boldLabel)
+			{
+				alignment = TextAnchor.MiddleCenter,
+				fontSize = fontSize,
+				wordWrap = false,
+			};
+			// boldLabel carries a content offset for its normal use as a row label. Left in place it
+			// shifts every glyph off the centre of its cell.
+			style.contentOffset = Vector2.zero;
+			style.padding = new RectOffset(0, 0, 0, 0);
+			style.margin = new RectOffset(0, 0, 0, 0);
+			return style;
+		}
+
+		private static GUIStyle _stencilRowLabel;
+		public static GUIStyle stencilRowLabel
+		{
+			get
+			{
+				if (_stencilRowLabel == null)
+				{
+					_stencilRowLabel = new GUIStyle(EditorStyles.label)
+					{
+						padding = new RectOffset(0, 0, 0, 0),
+						margin = new RectOffset(0, 0, 0, 0),
+						alignment = TextAnchor.MiddleLeft
+					};
+					// Row labels and decimal readouts are not interactive — suppress the
+					// implicit hover tint EditorStyles.label carries.
+					_stencilRowLabel.hover.textColor = _stencilRowLabel.normal.textColor;
+				}
+				return _stencilRowLabel;
+			}
+		}
+
+		private static GUIStyle _stencilBitWeight;
+		public static GUIStyle stencilBitWeight
+		{
+			get
+			{
+				if (_stencilBitWeight == null)
+				{
+					_stencilBitWeight = new GUIStyle(EditorStyles.label)
+					{
+						alignment = TextAnchor.UpperCenter,
+						fontSize = 8,
+					};
+					_stencilBitWeight.normal.textColor = Colors.stencilBitWeightText;
+					// Not interactive either - see stencilRowLabel.
+					_stencilBitWeight.hover.textColor = _stencilBitWeight.normal.textColor;
+				}
+				return _stencilBitWeight;
+			}
+		}
+
 		public static readonly GUIStyle vectorPropertyStyle = new GUIStyle() { padding = new RectOffset(0, 0, 2, 2) };
 		public static readonly GUIStyle orangeStyle = new GUIStyle() { normal = new GUIStyleState() { textColor = new Color(0.9f, 0.5f, 0) } };
 		public static readonly GUIStyle cyanStyle = new GUIStyle() { normal = new GUIStyleState() { textColor = Color.cyan } };
@@ -280,6 +362,27 @@ namespace Thry.ThryEditor
 		public static readonly Color handleBlue = new Color(0.4f, 0.8f, 1f, 1f);
 		public static readonly Color borderDark = new Color(0, 0, 0, 0.6f);
 		public static readonly Color referenceLine = new Color(0.3f, 0.3f, 0.3f, 0.5f);
+		// Tint behind an expanded foldout body. Same value SmallTextureProperty uses for its border.
+		public static readonly Color expandedFoldoutBackground = new Color(0, 0, 0, 0.1f);
+
+		// Stencil calculator colors
+		public static readonly Color stencilBufferValue = new Color(1f, 0.88f, 0.2f);
+		public static readonly Color stencilReference = new Color(0.4f, 0.75f, 1f);
+		public static readonly Color stencilMask = new Color(1f, 0.5f, 0.8f);
+		public static readonly Color stencilOutput = new Color(0.45f, 1f, 0.7f);
+		public static readonly Color stencilPass = new Color(0.35f, 0.9f, 0.35f);
+		public static readonly Color stencilFail = new Color(1f, 0.55f, 0.2f);
+		public static readonly Color stencilBlockedSymbol = new Color(0.75f, 0.2f, 0.2f, 1f);
+		public static readonly Color stencilLedOff = EditorGUIUtility.isProSkin ? new Color(0.38f, 0.38f, 0.38f) : new Color(0.72f, 0.72f, 0.72f);
+		public static readonly Color stencilLedMasked = EditorGUIUtility.isProSkin ? new Color(0.12f, 0.12f, 0.12f) : new Color(0.82f, 0.82f, 0.82f);
+		public static readonly Color stencilLedHover = EditorGUIUtility.isProSkin ? new Color(1f, 1f, 1f, 0.25f) : new Color(0f, 0f, 0f, 0.12f);
+		public static readonly Color stencilBitTextMasked = EditorGUIUtility.isProSkin ? new Color(1f, 1f, 1f, 0.18f) : new Color(0f, 0f, 0f, 0.25f);
+		public static readonly Color stencilSymbolHover = EditorGUIUtility.isProSkin ? Color.white : Color.black;
+		public static readonly Color stencilDivider = EditorGUIUtility.isProSkin ? Color.gray : new Color(0.42f, 0.42f, 0.42f);
+		public static readonly Color stencilBitWeightText = EditorGUIUtility.isProSkin ? new Color(0.6f, 0.6f, 0.6f) : new Color(0.35f, 0.35f, 0.35f);
+		public static readonly Color stencilDim = EditorGUIUtility.isProSkin ? new Color(0.45f, 0.45f, 0.45f) : new Color(0.62f, 0.62f, 0.62f);
+		// Zebra striping behind every other bit row. Reads on both skins, so it is not theme-split.
+		public static readonly Color stencilRowStripe = new Color(0, 0, 0, 0.1f);
 	}
 
 	public class Icons
