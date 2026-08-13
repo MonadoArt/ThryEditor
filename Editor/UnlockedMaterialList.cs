@@ -312,7 +312,7 @@ namespace Thry.ThryEditor
 
             float x = EdgePadding;
 
-            Rect refresh = new Rect(x, y, 68, ToolbarHeight);
+            Rect refresh = new Rect(x, y, 70, ToolbarHeight);
             if (GUI.Button(refresh, new GUIContent(" Refresh", EditorGUIUtility.IconContent("Refresh").image, "Re-scan the project (F5)"), EditorStyles.toolbarButton))
                 _pendingRescan = true;
             x += refresh.width + 2;
